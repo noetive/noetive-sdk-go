@@ -1,0 +1,46 @@
+// Command publish_text publishes a text message to the default
+// ("global") namespace; the server computes the embedding. Uses
+// ack=stored: returns once the message is acknowledged across
+// redundant copies and survives a single server restart. Use
+// ack=durable for survivorship across power loss.
+//
+// Usage:
+//
+//	NOETIVE_KEY_SECRET=keyu_... go run ./examples/publish_text
+package main
+
+import (
+	"context"
+	"fmt"
+	"log"
+	"time"
+
+	"github.com/noetive/noetive-sdk-go/semantik"
+)
+
+func main() {
+	c, err := semantik.NewFromEnv()
+	if err != nil {
+		log.Fatalf("init: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Minimal request: Namespace, Model and Dimensions default to the
+	// global-namespace configuration.
+	res, err := c.Publish(ctx, semantik.PublishRequest{
+		Items: []semantik.PublishItem{{
+			Text: "Transformer models have reshaped NLP benchmarks.",
+		}},
+		Metadata: map[string]string{
+			"source": "arxiv",
+			"author": "jdoe",
+		},
+		Ack: semantik.AckStored,
+	})
+	if err != nil {
+		log.Fatalf("publish: %v", err)
+	}
+	fmt.Printf("message_id=%s epoch=%d seq=%d\n", res.MessageID, res.Epoch, res.Seq)
+}
