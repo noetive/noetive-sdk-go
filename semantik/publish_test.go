@@ -141,26 +141,71 @@ func TestPublish_Backpressure_WithRetryAfter(t *testing.T) {
 	}
 }
 
-func TestPublish_DefaultsWhenAllUnset(t *testing.T) {
+// The SDK applies no targeting defaults: an unset Namespace, Model, or
+// Dimensions is a fail-fast preflight error rather than a silent
+// fall-back to a shared namespace. Routing a forgotten field to "global"
+// would let sensitive data land in a namespace the caller never named.
+func TestPublish_RequiresNamespace(t *testing.T) {
+	c, _ := New(testKey)
+	_, err := c.Publish(t.Context(), PublishRequest{
+		Items:      []PublishItem{{Text: "hello"}},
+		Model:      "Qwen3-Embedding-4B",
+		Dimensions: 1024,
+	})
+	if !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("want ErrInvalidRequest for empty Namespace, got %v", err)
+	}
+}
+
+func TestPublish_RequiresModel(t *testing.T) {
+	c, _ := New(testKey)
+	_, err := c.Publish(t.Context(), PublishRequest{
+		Items:      []PublishItem{{Text: "hello"}},
+		Namespace:  "global",
+		Dimensions: 1024,
+	})
+	if !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("want ErrInvalidRequest for empty Model, got %v", err)
+	}
+}
+
+func TestPublish_RequiresDimensions(t *testing.T) {
+	c, _ := New(testKey)
+	_, err := c.Publish(t.Context(), PublishRequest{
+		Items:     []PublishItem{{Text: "hello"}},
+		Namespace: "global",
+		Model:     "Qwen3-Embedding-4B",
+	})
+	if !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("want ErrInvalidRequest for zero Dimensions, got %v", err)
+	}
+}
+
+// A fully-specified request reaches the wire unmodified — the SDK
+// neither rewrites nor injects the targeting fields the caller set.
+func TestPublish_FullySpecifiedReachesWireUnmodified(t *testing.T) {
 	var body PublishRequest
 	_, c := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		readJSON(t, r, &body)
 		writeJSON(t, w, http.StatusOK, PublishResponse{MessageID: "msg"})
 	})
 	_, err := c.Publish(t.Context(), PublishRequest{
-		Items: []PublishItem{{Text: "hello"}},
+		Items:      []PublishItem{{Text: "hello"}},
+		Namespace:  "global",
+		Model:      "Qwen3-Embedding-4B",
+		Dimensions: 1024,
 	})
 	if err != nil {
 		t.Fatalf("Publish: %v", err)
 	}
-	if body.Namespace != DefaultNamespace {
-		t.Errorf("Namespace = %q, want %q", body.Namespace, DefaultNamespace)
+	if body.Namespace != "global" {
+		t.Errorf("Namespace = %q, want %q", body.Namespace, "global")
 	}
-	if body.Model != DefaultModel {
-		t.Errorf("Model = %q, want %q", body.Model, DefaultModel)
+	if body.Model != "Qwen3-Embedding-4B" {
+		t.Errorf("Model = %q, want %q", body.Model, "Qwen3-Embedding-4B")
 	}
-	if body.Dimensions != DefaultDimensions {
-		t.Errorf("Dimensions = %d, want %d", body.Dimensions, DefaultDimensions)
+	if body.Dimensions != 1024 {
+		t.Errorf("Dimensions = %d, want %d", body.Dimensions, 1024)
 	}
 }
 

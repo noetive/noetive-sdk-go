@@ -29,6 +29,26 @@ func hasControlChar(s string) bool {
 	return false
 }
 
+// validateTarget enforces the three targeting fields every
+// publish/search/subscribe request must carry: a non-empty namespace, a
+// non-empty model, and an in-range dimensions.
+//
+// The SDK does not default these. Routing a request to a namespace the
+// caller never named — silently falling back to a shared one — risks
+// publishing sensitive data into a space it was not meant for, so an
+// unset field is a fail-fast preflight error rather than a convenience
+// default. model and dimensions are likewise model-coupled properties
+// with no server default.
+func validateTarget(namespace, model string, dimensions uint16) *Error {
+	if namespace == "" {
+		return preflightErr("namespace must not be empty")
+	}
+	if model == "" {
+		return preflightErr("model must not be empty")
+	}
+	return validateDimensions(dimensions)
+}
+
 // validateDimensions enforces 1 <= dim <= MaxVectorDim.
 func validateDimensions(dim uint16) *Error {
 	if dim == 0 {

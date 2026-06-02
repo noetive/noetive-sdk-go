@@ -1,5 +1,6 @@
 // Command search demonstrates a SemQL text-anchor search against
-// the default ("global") namespace.
+// the "global" namespace, naming the namespace, model and dimensions
+// explicitly as every request must.
 //
 // Usage:
 //
@@ -24,10 +25,13 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	// Minimal request: Namespace, Model and Dimensions are defaulted
-	// to the global-namespace configuration (see semantik.Default*).
+	// Namespace, Model and Dimensions are required on every request;
+	// the SDK applies no defaults.
 	res, err := c.Search(ctx, semantik.SearchRequest{
-		Query: `MATCH DISTANCE("machine learning research") WITHIN 0.4 LIMIT 10`,
+		Query:      `MATCH DISTANCE("machine learning research") WITHIN 0.4 LIMIT 10`,
+		Namespace:  "global",
+		Model:      "Qwen3-Embedding-4B",
+		Dimensions: 1024,
 	})
 	if err != nil {
 		log.Fatalf("search: %v", err)

@@ -6,21 +6,27 @@
 //	c, err := semantik.New("keyu_...")
 //	if err != nil { log.Fatal(err) }
 //
-//	// Minimal request: targets the default "global" namespace
-//	// with its pre-configured embedding model.
 //	res, err := c.Search(ctx, semantik.SearchRequest{
-//	    Query: `MATCH DISTANCE("machine learning") WITHIN 0.4 LIMIT 10`,
+//	    Query:      `MATCH DISTANCE("machine learning") WITHIN 0.4 LIMIT 10`,
+//	    Namespace:  "global",
+//	    Model:      "Qwen3-Embedding-4B",
+//	    Dimensions: 1024,
 //	})
 //
-// A private namespace requires explicit Model and Dimensions; see
-// [SearchRequest] for the defaulting rules.
+// Namespace, Model and Dimensions are REQUIRED on every publish, search
+// and subscribe — the SDK applies no defaults and rejects an unset field
+// at preflight. Defaulting Namespace to a shared value would let a
+// forgotten field route sensitive data into a namespace the caller never
+// intended, so the SDK fails fast instead. See [SearchRequest],
+// [PublishRequest] and [SubscribeRequest].
 //
 // # Authentication
 //
 // Requests carry an API key as Authorization: Bearer <key>. Keys are
 // issued by the Noetive dashboard and have the form keyu_<base58>
-// (user-owned) or keyt_<base58> (tenant-owned). The SDK validates the
-// prefix locally; deeper validation is left to the server.
+// (user-owned) or keyt_<base58> (tenant-owned). The SDK checks only
+// that the key is non-empty; it does not inspect the prefix or
+// contents, so deeper validation is left to the server.
 //
 // Environment constructor: [NewFromEnv] reads NOETIVE_KEY_SECRET (required)
 // and NOETIVE_BASE_URL (optional, defaults to https://semantik.noetive.io).

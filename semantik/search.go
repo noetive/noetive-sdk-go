@@ -4,15 +4,21 @@ import "context"
 
 // SearchRequest is the body of POST /v1/search.
 //
-// All fields are optional when targeting the default configuration:
+// Namespace, Model and Dimensions are REQUIRED — the SDK applies no
+// defaults. A request that leaves any of them unset is rejected at
+// preflight rather than silently routed: defaulting Namespace to a
+// shared value would let a forgotten field query a namespace the caller
+// never intended, a data-isolation hazard. Model and Dimensions are
+// model-coupled properties with no server default.
 //
-//   - Namespace empty ⇒ [DefaultNamespace] ("global")
-//   - Model empty + namespace is global ⇒ [DefaultModel]
-//   - Dimensions zero + namespace is global ⇒ [DefaultDimensions]
+// A minimal request against the shared "global" namespace is therefore:
 //
-// A minimal request is therefore just SearchRequest{Query: "..."}.
-// Callers targeting a private namespace MUST set Model and Dimensions
-// explicitly; the SDK does not guess their configuration.
+//	req := semantik.SearchRequest{
+//	    Query:      `MATCH DISTANCE("machine learning") WITHIN 0.4 LIMIT 10`,
+//	    Namespace:  "global",
+//	    Model:      "Qwen3-Embedding-4B",
+//	    Dimensions: 1024,
+//	}
 //
 // Dimensions must match the output dimensionality of the embedding
 // Model and, at query time, the dimensionality stored in the
@@ -48,10 +54,6 @@ type ResultItem struct {
 // Search runs a SemQL query against the namespace. The returned
 // SearchResponse is zero-valued when the request failed.
 func (c *Client) Search(ctx context.Context, req SearchRequest) (SearchResponse, error) {
-	if req.Namespace == "" {
-		req.Namespace = DefaultNamespace
-	}
-	applyNamespaceDefaults(req.Namespace, &req.Model, &req.Dimensions)
 	if err := req.validate(); err != nil {
 		return SearchResponse{}, err
 	}
@@ -66,10 +68,7 @@ func (r SearchRequest) validate() *Error {
 	if r.Query == "" {
 		return preflightErr("search query must not be empty")
 	}
-	if r.Model == "" {
-		return preflightErr("search model must not be empty")
-	}
-	if err := validateDimensions(r.Dimensions); err != nil {
+	if err := validateTarget(r.Namespace, r.Model, r.Dimensions); err != nil {
 		return err
 	}
 	if r.Limit < 0 {

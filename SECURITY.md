@@ -35,13 +35,8 @@ deprecation note will land here.
 Please report vulnerabilities privately. Do **not** open a public
 GitHub issue or pull request for a suspected security bug.
 
-Preferred channels, in order:
-
-1. **GitHub Security Advisory** — submit at
-   <https://github.com/noetive/noetive-sdk-go/security/advisories/new>.
-   This keeps the discussion embargoed while we coordinate a fix.
-2. **Email** — <support@noetive.io>. Use subject line
-   `[noetive-sdk-go security] <short description>`.
+Report by **email** to <security@noetive.eu>, using subject line
+`[noetive-sdk-go security] <short description>`.
 
 Include, where possible:
 
@@ -64,8 +59,7 @@ Include, where possible:
 - **Coordinated disclosure**: we publish the advisory and credit the
   reporter (if they consent) after a fix is released. Embargo length
   is negotiated with the reporter.
-- **CVE assignment**: we request a CVE through the GitHub Security
-  Advisory workflow for anything Medium or above.
+- **CVE assignment**: we request a CVE for anything Medium or above.
 
 ## Known security-relevant behaviour
 
@@ -76,8 +70,10 @@ from code.
 - **Credential handling.** API keys are held in the `Client` struct
   and sent as `Authorization: Bearer <key>`. The SDK never logs the
   key and never writes it to disk. The User-Agent does not include
-  any secret material. `New` validates the key's prefix only
-  (`keyu_` / `keyt_`) — deeper validation is the server's job.
+  any secret material. `New` rejects only empty / whitespace-only
+  keys; it does not inspect the key's prefix or contents. Deeper
+  validation is the server's job, and prefix-locking the client would
+  break the moment Noetive introduces a new key family.
 - **TLS.** The default HTTP transport is the stdlib's
   `http.DefaultTransport.Clone()` with `ResponseHeaderTimeout`. TLS
   verification is enabled by default; users who need a custom root

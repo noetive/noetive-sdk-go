@@ -1,6 +1,6 @@
 // Command subscribe opens an SSE match stream for a SemQL query
-// against the default ("global") namespace and prints match events
-// as they arrive. Uses the Go 1.23+ range-over-func iterator.
+// against the "global" namespace and prints match events as they
+// arrive. Uses the Go 1.23+ range-over-func iterator.
 //
 // Usage:
 //
@@ -34,10 +34,13 @@ func main() {
 	subCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	// Minimal request: Namespace, Model and Dimensions default to the
-	// global-namespace configuration.
+	// Namespace, Model and Dimensions are required on every request;
+	// the SDK applies no defaults.
 	sub, err := c.Subscribe(subCtx, semantik.SubscribeRequest{
-		Query: `MATCH DISTANCE("gpu shortage") WITHIN 0.5`,
+		Query:      `MATCH DISTANCE("gpu shortage") WITHIN 0.5`,
+		Namespace:  "global",
+		Model:      "Qwen3-Embedding-4B",
+		Dimensions: 1024,
 	})
 	if err != nil {
 		log.Fatalf("subscribe: %v", err)

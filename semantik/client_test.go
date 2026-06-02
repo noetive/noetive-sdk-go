@@ -1,6 +1,7 @@
 package semantik
 
 import (
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -10,8 +11,8 @@ import (
 	gojson "github.com/goccy/go-json"
 )
 
-// testKey is a syntactically valid but server-invalid API key used to
-// satisfy the New() prefix check in unit tests.
+// testKey is a non-empty, server-invalid API key used to satisfy the
+// New() non-empty check in unit tests.
 const testKey = "keyu_000000000000000000000000000000000000000000000"
 
 // newTestServer wires an httptest.Server to handler and returns a
@@ -62,18 +63,24 @@ func writeError(t *testing.T, w http.ResponseWriter, status int, code, msg strin
 	writeJSON(t, w, status, body)
 }
 
-func TestNew_RejectsInvalidKey(t *testing.T) {
-	for _, bad := range []string{"", "Bearer foo", "sk_1234", "abcdef"} {
-		if _, err := New(bad); err == nil {
-			t.Errorf("New(%q) accepted an invalid key", bad)
+func TestNew_RejectsEmptyKey(t *testing.T) {
+	// Only empty / whitespace-only keys are rejected. The SDK does not
+	// inspect the prefix or contents, so an unset key fails fast while
+	// any non-empty key is left for the server to validate.
+	for _, bad := range []string{"", " ", "\t\n"} {
+		if _, err := New(bad); !errors.Is(err, ErrInvalidAPIKey) {
+			t.Errorf("New(%q) = %v, want ErrInvalidAPIKey", bad, err)
 		}
 	}
 }
 
-func TestNew_AcceptsKnownPrefixes(t *testing.T) {
-	for _, ok := range []string{"keyu_abc", "keyt_abc"} {
+func TestNew_AcceptsAnyNonEmptyKey(t *testing.T) {
+	// No prefix check: the recognised keyu_/keyt_ prefixes and any other
+	// non-empty shape are all accepted, so a future key family cannot be
+	// rejected client-side.
+	for _, ok := range []string{"keyu_abc", "keyt_abc", "sk-foo", "some_new_format_key"} {
 		if _, err := New(ok); err != nil {
-			t.Errorf("New(%q) rejected a valid prefix: %v", ok, err)
+			t.Errorf("New(%q) rejected a non-empty key: %v", ok, err)
 		}
 	}
 }

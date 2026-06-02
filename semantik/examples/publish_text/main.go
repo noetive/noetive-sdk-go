@@ -1,5 +1,5 @@
-// Command publish_text publishes a text message to the default
-// ("global") namespace; the server computes the embedding. Uses
+// Command publish_text publishes a text message to the "global"
+// namespace; the server computes the embedding. Uses
 // ack=stored: returns once the message is acknowledged across
 // redundant copies and survives a single server restart. Use
 // ack=durable for survivorship across power loss.
@@ -27,12 +27,15 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	// Minimal request: Namespace, Model and Dimensions default to the
-	// global-namespace configuration.
+	// Namespace, Model and Dimensions are required on every request;
+	// the SDK applies no defaults.
 	res, err := c.Publish(ctx, semantik.PublishRequest{
 		Items: []semantik.PublishItem{{
 			Text: "Transformer models have reshaped NLP benchmarks.",
 		}},
+		Namespace:  "global",
+		Model:      "Qwen3-Embedding-4B",
+		Dimensions: 1024,
 		Metadata: map[string]string{
 			"source": "arxiv",
 			"author": "jdoe",

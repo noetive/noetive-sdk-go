@@ -11,9 +11,6 @@ import (
 )
 
 const (
-	apiKeyPrefixUser   = "keyu_"
-	apiKeyPrefixTenant = "keyt_"
-
 	headerAuthorization = "Authorization"
 	headerContentType   = "Content-Type"
 	headerUserAgent     = "User-Agent"
@@ -69,12 +66,13 @@ func (c *Client) GoString() string {
 }
 
 // New constructs a Client authenticated with the given API key. The key
-// must carry a recognised prefix (keyu_ or keyt_); otherwise
-// [ErrInvalidAPIKey] is returned.
+// must be non-empty; the SDK does not inspect its prefix or contents, so
+// an empty or whitespace-only key returns [ErrInvalidAPIKey]. Deeper
+// validation is the server's job.
 //
 // Opts are applied in order; later values win.
 func New(apiKey string, opts ...Option) (*Client, error) {
-	if !validAPIKeyPrefix(apiKey) {
+	if !apiKeyNonEmpty(apiKey) {
 		return nil, ErrInvalidAPIKey
 	}
 	cfg := config{
@@ -118,12 +116,14 @@ func NewFromEnv(opts ...Option) (*Client, error) {
 	return New(key, opts...)
 }
 
-// validAPIKeyPrefix reports whether k starts with a recognised Noetive
-// API key prefix. Intentionally prefix-only: deeper validation (length,
-// base58 decoding, envelope integrity) is the server's job.
-func validAPIKeyPrefix(k string) bool {
-	return strings.HasPrefix(k, apiKeyPrefixUser) ||
-		strings.HasPrefix(k, apiKeyPrefixTenant)
+// apiKeyNonEmpty reports whether k is usable as an API key. The SDK
+// checks only that the key is non-empty (ignoring surrounding
+// whitespace); it does not inspect the prefix or contents. The server
+// is the source of truth for key validity, and locking the client to a
+// specific prefix shape would break the moment Noetive introduces a new
+// key family.
+func apiKeyNonEmpty(k string) bool {
+	return strings.TrimSpace(k) != ""
 }
 
 // doJSON marshals req as JSON, POSTs it to path, and decodes a 2xx

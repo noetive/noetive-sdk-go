@@ -16,15 +16,21 @@ import (
 
 // SubscribeRequest is the body of POST /v1/subscribe.
 //
-// Defaults apply when targeting the global configuration:
+// Namespace, Model and Dimensions are REQUIRED — the SDK applies no
+// defaults. A request that leaves any of them unset is rejected at
+// preflight rather than silently routed: defaulting Namespace to a
+// shared value would let a forgotten field subscribe to a namespace the
+// caller never intended, a data-isolation hazard. Model and Dimensions
+// are model-coupled properties with no server default.
 //
-//   - Namespace empty ⇒ [DefaultNamespace] ("global")
-//   - Model empty + namespace is global ⇒ [DefaultModel]
-//   - Dimensions zero + namespace is global ⇒ [DefaultDimensions]
+// A minimal subscription against the shared "global" namespace is:
 //
-// A minimal request is therefore SubscribeRequest{Query: "..."}.
-// Private namespaces require dashboard configuration and incur usage
-// charges; callers using one MUST set Model and Dimensions explicitly.
+//	req := semantik.SubscribeRequest{
+//	    Query:      `MATCH DISTANCE("gpu shortage") WITHIN 0.5`,
+//	    Namespace:  "global",
+//	    Model:      "Qwen3-Embedding-4B",
+//	    Dimensions: 1024,
+//	}
 //
 // Field ordering: strings (16 B each) > uint16 (2 B).
 type SubscribeRequest struct {
@@ -236,10 +242,6 @@ func (s *Subscription) Close() error {
 // The caller MUST call [Subscription.Close] to release the connection,
 // even when breaking out of an [Subscription.Events] loop early.
 func (c *Client) Subscribe(ctx context.Context, req SubscribeRequest) (*Subscription, error) {
-	if req.Namespace == "" {
-		req.Namespace = DefaultNamespace
-	}
-	applyNamespaceDefaults(req.Namespace, &req.Model, &req.Dimensions)
 	if err := req.validate(); err != nil {
 		// Validation failures predate the retry loop and produce no
 		// server state to clean up. Wrap so callers can branch on
@@ -381,10 +383,7 @@ func (r SubscribeRequest) validate() *Error {
 	if r.Query == "" {
 		return preflightErr("subscribe query must not be empty")
 	}
-	if r.Model == "" {
-		return preflightErr("subscribe model must not be empty")
-	}
-	return validateDimensions(r.Dimensions)
+	return validateTarget(r.Namespace, r.Model, r.Dimensions)
 }
 
 // isEventStreamContentType reports whether ct is a valid

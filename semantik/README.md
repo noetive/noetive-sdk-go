@@ -22,35 +22,39 @@ import "github.com/noetive/noetive-sdk-go/semantik"
 c, err := semantik.New("keyu_...")   // or semantik.NewFromEnv()
 if err != nil { log.Fatal(err) }
 
-// Minimal request: hits the default "global" namespace with its
-// pre-configured embedding model and dimensionality.
+// Namespace, Model and Dimensions are required on every request.
 res, err := c.Search(context.Background(), semantik.SearchRequest{
-    Query: `MATCH DISTANCE("machine learning research") WITHIN 0.4 LIMIT 10`,
+    Query:      `MATCH DISTANCE("machine learning research") WITHIN 0.4 LIMIT 10`,
+    Namespace:  "global",
+    Model:      "Qwen3-Embedding-4B",
+    Dimensions: 1024,
 })
 ```
 
-## Defaults
+## Targeting: namespace, model, dimensions are required
 
-The SDK targets the **global** namespace by default. The global
-namespace is provisioned for every account with the
-`Qwen3-Embedding-4B` model at 1024 dimensions and requires no setup.
+Every publish, search and subscribe **must** set `Namespace`, `Model`
+and `Dimensions` explicitly. The SDK applies **no defaults** to these
+fields: an empty `Namespace`, an empty `Model`, or a zero `Dimensions`
+is rejected by client-side pre-flight validation before the request
+reaches the wire.
 
-| Field | When empty/zero on a request… |
-|---|---|
-| `Namespace` | Filled with `semantik.DefaultNamespace` (`"global"`) |
-| `Model` | Filled with `semantik.DefaultModel` (only when namespace is global) |
-| `Dimensions` | Filled with `semantik.DefaultDimensions` (only when namespace is global) |
+This is a data-isolation guarantee. Defaulting `Namespace` to a shared
+value (such as `"global"`) would let a caller who simply forgot the
+field route sensitive data into a namespace they never intended. Making
+the field required removes that hazard entirely — the SDK fails fast
+rather than guessing.
 
-Private namespaces cost money and require dashboard setup; callers
-using one **must** set `Model` and `Dimensions` explicitly — the SDK
-does not guess.
+The `"global"` namespace remains a valid target (provisioned for every
+account with the `Qwen3-Embedding-4B` model at 1024 dimensions); it just
+has to be named explicitly like any other.
 
 ## Authentication
 
 Pass an API key from the Noetive dashboard. Keys start with `keyu_`
-(user) or `keyt_` (tenant). The SDK validates the prefix and refuses
-obviously malformed input; the server is the source of truth for
-everything else.
+(user) or `keyt_` (tenant). The SDK refuses only an empty or
+whitespace-only key; it does not inspect the prefix or contents, so the
+server is the source of truth for everything else.
 
 `semantik.NewFromEnv()` reads:
 
@@ -113,7 +117,12 @@ shape can pass their own bound or `RetryPolicy`.
 arrives.
 
 ```go
-sub, err := c.Subscribe(ctx, semantik.SubscribeRequest{/* ... */})
+sub, err := c.Subscribe(ctx, semantik.SubscribeRequest{
+    Query:      `MATCH DISTANCE("gpu shortage") WITHIN 0.5`,
+    Namespace:  "global",
+    Model:      "Qwen3-Embedding-4B",
+    Dimensions: 1024,
+})
 if err != nil { log.Fatal(err) }
 defer sub.Close()
 

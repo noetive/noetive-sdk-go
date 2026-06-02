@@ -42,24 +42,14 @@ const (
 	MaxIdempotencyKeyLen = 256
 
 	// defaultBaseURL is the production Semantik endpoint.
+	//
+	// This and the NOETIVE_KEY_SECRET / NOETIVE_BASE_URL environment
+	// variables are the SDK's entire defaulting surface. The targeting
+	// fields — Namespace, Model and Dimensions — are deliberately NOT
+	// defaulted: every publish, search and subscribe must set them
+	// explicitly, and an unset field fails preflight. Defaulting
+	// Namespace to a shared value would let a caller who simply forgot
+	// the field route sensitive data into a namespace they never
+	// intended, so the SDK fails fast instead.
 	defaultBaseURL = "https://semantik.noetive.io"
-
-	// DefaultNamespace is the namespace the SDK falls back to when
-	// [SearchRequest.Namespace], [PublishRequest.Namespace] or
-	// [SubscribeRequest.Namespace] is empty. The "global" namespace
-	// is provisioned for every account with no extra setup; private
-	// namespaces require configuration on the Noetive dashboard and
-	// incur usage charges.
-	DefaultNamespace = "global"
-
-	// DefaultModel is the embedding model pre-configured for the
-	// [DefaultNamespace]. The SDK fills it in when Model is empty
-	// and the effective namespace is the default one. Callers using
-	// a private namespace must set Model explicitly.
-	DefaultModel = "Qwen3-Embedding-4B"
-
-	// DefaultDimensions is the embedding dimensionality pre-configured
-	// for the [DefaultNamespace]. The SDK fills it in when Dimensions
-	// is zero and the effective namespace is the default one.
-	DefaultDimensions uint16 = 1024
 )

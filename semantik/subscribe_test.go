@@ -204,7 +204,43 @@ func TestSubscribe_MissingSubscribedFrame(t *testing.T) {
 	}
 }
 
-func TestSubscribe_DefaultsWhenAllUnset(t *testing.T) {
+// The SDK applies no targeting defaults: an unset Namespace, Model, or
+// Dimensions is a fail-fast preflight error. Defaulting Namespace to a
+// shared value would let a forgotten field subscribe to a namespace the
+// caller never intended.
+func TestSubscribe_RequiresNamespace(t *testing.T) {
+	c, _ := New(testKey)
+	_, err := c.Subscribe(t.Context(), SubscribeRequest{
+		Query: "q", Model: "Qwen3-Embedding-4B", Dimensions: 1024,
+	})
+	if !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("want ErrInvalidRequest for empty Namespace, got %v", err)
+	}
+}
+
+func TestSubscribe_RequiresModel(t *testing.T) {
+	c, _ := New(testKey)
+	_, err := c.Subscribe(t.Context(), SubscribeRequest{
+		Query: "q", Namespace: "global", Dimensions: 1024,
+	})
+	if !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("want ErrInvalidRequest for empty Model, got %v", err)
+	}
+}
+
+func TestSubscribe_RequiresDimensions(t *testing.T) {
+	c, _ := New(testKey)
+	_, err := c.Subscribe(t.Context(), SubscribeRequest{
+		Query: "q", Namespace: "global", Model: "Qwen3-Embedding-4B",
+	})
+	if !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("want ErrInvalidRequest for zero Dimensions, got %v", err)
+	}
+}
+
+// A fully-specified request reaches the wire with its targeting fields
+// intact — the SDK neither rewrites nor injects them.
+func TestSubscribe_FullySpecifiedReachesWireUnmodified(t *testing.T) {
 	var body SubscribeRequest
 	_, c := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		readJSON(t, r, &body)
@@ -214,19 +250,22 @@ func TestSubscribe_DefaultsWhenAllUnset(t *testing.T) {
 		_, _ = io.WriteString(w, "event: subscribed\ndata: {\"subscription_id\":\"s\"}\n\n")
 		fl.Flush()
 	})
-	sub, err := c.Subscribe(t.Context(), SubscribeRequest{Query: "q"})
+	sub, err := c.Subscribe(t.Context(), SubscribeRequest{
+		Query: "q", Namespace: "global",
+		Model: "Qwen3-Embedding-4B", Dimensions: 1024,
+	})
 	if err != nil {
 		t.Fatalf("Subscribe: %v", err)
 	}
 	defer sub.Close()
-	if body.Namespace != DefaultNamespace {
-		t.Errorf("Namespace = %q, want %q", body.Namespace, DefaultNamespace)
+	if body.Namespace != "global" {
+		t.Errorf("Namespace = %q, want %q", body.Namespace, "global")
 	}
-	if body.Model != DefaultModel {
-		t.Errorf("Model = %q, want %q", body.Model, DefaultModel)
+	if body.Model != "Qwen3-Embedding-4B" {
+		t.Errorf("Model = %q, want %q", body.Model, "Qwen3-Embedding-4B")
 	}
-	if body.Dimensions != DefaultDimensions {
-		t.Errorf("Dimensions = %d, want %d", body.Dimensions, DefaultDimensions)
+	if body.Dimensions != 1024 {
+		t.Errorf("Dimensions = %d, want %d", body.Dimensions, 1024)
 	}
 }
 

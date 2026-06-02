@@ -74,61 +74,63 @@ func TestSearch_RateLimited(t *testing.T) {
 	}
 }
 
-func TestSearch_DefaultsWhenAllUnset(t *testing.T) {
-	var body SearchRequest
-	_, c := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
-		readJSON(t, r, &body)
-		writeJSON(t, w, http.StatusOK, SearchResponse{})
+// The SDK applies no targeting defaults: an unset Namespace, Model, or
+// Dimensions is a fail-fast preflight error. Defaulting Namespace to a
+// shared value would let a forgotten field query a namespace the caller
+// never intended.
+func TestSearch_RequiresNamespace(t *testing.T) {
+	c, _ := New(testKey)
+	_, err := c.Search(t.Context(), SearchRequest{
+		Query: "q", Model: "Qwen3-Embedding-4B", Dimensions: 1024,
 	})
-	_, err := c.Search(t.Context(), SearchRequest{Query: "q"})
-	if err != nil {
-		t.Fatalf("Search: %v", err)
-	}
-	if body.Namespace != DefaultNamespace {
-		t.Errorf("Namespace = %q, want %q", body.Namespace, DefaultNamespace)
-	}
-	if body.Model != DefaultModel {
-		t.Errorf("Model = %q, want %q", body.Model, DefaultModel)
-	}
-	if body.Dimensions != DefaultDimensions {
-		t.Errorf("Dimensions = %d, want %d", body.Dimensions, DefaultDimensions)
+	if !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("want ErrInvalidRequest for empty Namespace, got %v", err)
 	}
 }
 
-func TestSearch_DefaultsDoNotOverrideExplicit(t *testing.T) {
+func TestSearch_RequiresModel(t *testing.T) {
+	c, _ := New(testKey)
+	_, err := c.Search(t.Context(), SearchRequest{
+		Query: "q", Namespace: "global", Dimensions: 1024,
+	})
+	if !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("want ErrInvalidRequest for empty Model, got %v", err)
+	}
+}
+
+func TestSearch_RequiresDimensions(t *testing.T) {
+	c, _ := New(testKey)
+	_, err := c.Search(t.Context(), SearchRequest{
+		Query: "q", Namespace: "global", Model: "Qwen3-Embedding-4B",
+	})
+	if !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("want ErrInvalidRequest for zero Dimensions, got %v", err)
+	}
+}
+
+// A fully-specified request reaches the wire with its targeting fields
+// intact — the SDK neither rewrites nor injects them.
+func TestSearch_FullySpecifiedReachesWireUnmodified(t *testing.T) {
 	var body SearchRequest
 	_, c := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		readJSON(t, r, &body)
 		writeJSON(t, w, http.StatusOK, SearchResponse{})
 	})
 	_, err := c.Search(t.Context(), SearchRequest{
-		Query: "q", Namespace: DefaultNamespace,
+		Query: "q", Namespace: "global",
 		Model: "custom-model", Dimensions: 384,
 	})
 	if err != nil {
 		t.Fatalf("Search: %v", err)
 	}
+	if body.Namespace != "global" {
+		t.Errorf("Namespace = %q, want %q", body.Namespace, "global")
+	}
 	if body.Model != "custom-model" {
-		t.Errorf("SDK overrode explicit Model: got %q", body.Model)
+		t.Errorf("Model = %q, want %q", body.Model, "custom-model")
 	}
 	if body.Dimensions != 384 {
-		t.Errorf("SDK overrode explicit Dimensions: got %d", body.Dimensions)
-	}
-}
-
-func TestSearch_NoModelDefaultForPrivateNamespace(t *testing.T) {
-	// When the caller targets a non-default namespace, the SDK must
-	// NOT fill in Model/Dimensions — private namespaces have their
-	// own configuration.
-	c, _ := New(testKey)
-	_, err := c.Search(t.Context(), SearchRequest{
-		Query: "q", Namespace: "private-x",
-	})
-	if err == nil {
-		t.Fatal("expected preflight error (empty Model)")
-	}
-	if !errors.Is(err, ErrInvalidRequest) {
-		t.Errorf("want ErrInvalidRequest, got %v", err)
+		t.Errorf("Dimensions = %d, want %d", body.Dimensions, 384)
 	}
 }
 

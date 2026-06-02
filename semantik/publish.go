@@ -43,16 +43,21 @@ type PublishItem struct {
 
 // PublishRequest is the body of POST /v1/publish.
 //
-// Defaults apply when targeting the global configuration:
+// Namespace, Model and Dimensions are REQUIRED — the SDK applies no
+// defaults. A request that leaves any of them unset is rejected at
+// preflight rather than silently routed: defaulting Namespace to a
+// shared value would let a forgotten field publish sensitive data into
+// a namespace the caller never intended, a data-isolation hazard. Model
+// and Dimensions are model-coupled properties with no server default.
 //
-//   - Namespace empty ⇒ [DefaultNamespace] ("global")
-//   - Model empty + namespace is global ⇒ [DefaultModel]
-//   - Dimensions zero + namespace is global ⇒ [DefaultDimensions]
+// A minimal text publish to the shared "global" namespace is therefore:
 //
-// A minimal text publish is therefore
-// PublishRequest{Items: []PublishItem{{Text: "..."}}}.
-// Private namespaces require dashboard configuration and incur usage
-// charges; callers using one MUST set Model and Dimensions explicitly.
+//	req := semantik.PublishRequest{
+//	    Items:      []semantik.PublishItem{{Text: "Transformer models reshaped NLP."}},
+//	    Namespace:  "global",
+//	    Model:      "Qwen3-Embedding-4B",
+//	    Dimensions: 1024,
+//	}
 //
 // Dimensions must match the embedding Model and, when publishing a
 // vector, the length of the vector itself. A mismatch is a
@@ -84,10 +89,6 @@ type PublishResponse struct {
 // Publish ingests a single message into the namespace. On success the
 // response carries a stable MessageID and ordering tokens.
 func (c *Client) Publish(ctx context.Context, req PublishRequest) (PublishResponse, error) {
-	if req.Namespace == "" {
-		req.Namespace = DefaultNamespace
-	}
-	applyNamespaceDefaults(req.Namespace, &req.Model, &req.Dimensions)
 	if err := req.validate(); err != nil {
 		return PublishResponse{}, err
 	}
@@ -99,10 +100,7 @@ func (c *Client) Publish(ctx context.Context, req PublishRequest) (PublishRespon
 }
 
 func (r PublishRequest) validate() *Error {
-	if r.Model == "" {
-		return preflightErr("publish model must not be empty")
-	}
-	if err := validateDimensions(r.Dimensions); err != nil {
+	if err := validateTarget(r.Namespace, r.Model, r.Dimensions); err != nil {
 		return err
 	}
 	if len(r.Items) != 1 {

@@ -2,6 +2,8 @@ package semantik
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"io"
 	"math"
 	"net/http"
@@ -10,44 +12,70 @@ import (
 	"testing"
 	"time"
 	"unicode/utf8"
+
+	"github.com/noetive/noetive-sdk-go/internal/sse"
 )
 
 // FuzzErrorDecode feeds arbitrary bytes into decodeError across the
-// full status-code space and a fuzzed Retry-After header. It asserts
-// the decoder never panics, always returns a non-nil *Error with the
-// status preserved, never invents a RetryAfter exceeding the SDK's
-// own cap, and never produces a stringified form that panics.
+// full status-code space, a fuzzed Retry-After header, and a fuzzed
+// X-Request-Id header. It asserts the decoder never panics, always
+// returns a non-nil *Error with the status preserved, never invents a
+// RetryAfter exceeding the SDK's own cap, and never produces a
+// stringified form that panics. It additionally pins two correlation
+// invariants from decodeError:
+//
+//   - request_id precedence: a non-empty body request_id wins over the
+//     X-Request-Id header; otherwise the header value (possibly empty)
+//     is preserved. This holds on every path because Error.RequestID is
+//     only ever the header value or a non-empty body override.
+//   - unknown-code passthrough: a non-empty body "error" field becomes
+//     Error.Code verbatim, so a future server code flows through
+//     untouched (forward compatibility).
+//
+// MUST NOT be run with -race: it feeds crafted JSON through
+// goccy/go-json, where checkptr can raise an unrecoverable
+// runtime.throw (see safejson.go).
 func FuzzErrorDecode(f *testing.F) {
 	type seed struct {
 		status     uint16
 		retryAfter string
 		body       string
+		xReqID     string
 	}
 	seeds := []seed{
-		{429, "", ""},
-		{429, "", "{}"},
-		{429, "", `{"error":"backpressure","retry_after_ms":100}`},
-		{503, "30", `{"error":"unavailable"}`},
-		{503, "Wed, 21 Oct 2099 07:28:00 GMT", ""},
-		{500, "", `{"error":""}`},
-		{400, "", `{"error":"x","message":"y","retry_after_ms":1}`},
-		{500, "", `{"error":"internal_error","retry_after_ms":4294967295}`},
-		{502, "", `<html>gateway timeout</html>`},
-		{200, "", `null`},
-		{418, "", `"just a string"`},
-		{401, "", `{"error":42}`},
-		{402, "", `{"error":"a","message":null}`},
-		{0, "abc", `{` + strings.Repeat(`"x":1,`, 1000) + `"e":"f"}`},
-		{65535, "-1", "{}"},
+		{429, "", "", ""},
+		{429, "", "{}", ""},
+		{429, "", `{"error":"backpressure","retry_after_ms":100}`, ""},
+		{503, "30", `{"error":"unavailable"}`, ""},
+		{503, "Wed, 21 Oct 2099 07:28:00 GMT", "", ""},
+		{500, "", `{"error":""}`, ""},
+		{400, "", `{"error":"x","message":"y","retry_after_ms":1}`, ""},
+		{500, "", `{"error":"internal_error","retry_after_ms":4294967295}`, ""},
+		{502, "", `<html>gateway timeout</html>`, ""},
+		{200, "", `null`, ""},
+		{418, "", `"just a string"`, ""},
+		{401, "", `{"error":42}`, ""},
+		{402, "", `{"error":"a","message":null}`, ""},
+		{0, "abc", `{` + strings.Repeat(`"x":1,`, 1000) + `"e":"f"}`, ""},
+		{65535, "-1", "{}", ""},
+		// request_id precedence and unknown-code passthrough.
+		{429, "", `{"error":"backpressure"}`, "req-hdr-1"},   // empty body id ⇒ header fallback
+		{503, "", `{"error":"unavailable","request_id":"req-body-1"}`, "req-hdr-2"}, // body wins
+		{500, "", `{"error":"weird_unknown_code"}`, ""},      // verbatim unknown code
+		{400, "", "not json", "req-hdr-3"},                   // unparseable ⇒ header preserved
+		{502, "", "", "req-hdr-4"},                           // empty body ⇒ header preserved
 	}
 	for _, s := range seeds {
-		f.Add(s.status, s.retryAfter, []byte(s.body))
+		f.Add(s.status, s.retryAfter, []byte(s.body), s.xReqID)
 	}
 
-	f.Fuzz(func(t *testing.T, status uint16, retryAfter string, body []byte) {
+	f.Fuzz(func(t *testing.T, status uint16, retryAfter string, body []byte, xReqID string) {
 		h := http.Header{}
 		if retryAfter != "" {
 			h.Set("Retry-After", retryAfter)
+		}
+		if xReqID != "" {
+			h.Set("X-Request-Id", xReqID)
 		}
 		resp := &http.Response{
 			StatusCode: int(status),
@@ -80,6 +108,35 @@ func FuzzErrorDecode(f *testing.F) {
 			}
 		}
 		_ = e.Error() // assert String formatting does not panic.
+
+		// Correlation precedence and unknown-code passthrough. Decode
+		// the body the same way decodeError does — including its read
+		// cap, so the two parse exactly the same bytes (decodeError reads
+		// io.LimitReader(body, 64<<10); a larger body's parseability can
+		// differ between the prefix and the whole). Both branches hold on
+		// every code path because Error.RequestID is only ever the header
+		// value (set first) or a non-empty body override.
+		const errBodyCap = 64 << 10 // mirrors decodeError (error.go:374)
+		seen := body
+		if len(seen) > errBodyCap {
+			seen = seen[:errBodyCap]
+		}
+		var env errorEnvelope
+		if safeUnmarshal(seen, &env) == nil {
+			if env.RequestID != "" {
+				if e.RequestID != env.RequestID {
+					t.Errorf("body request_id %q must win, got %q", env.RequestID, e.RequestID)
+				}
+			} else if e.RequestID != xReqID {
+				t.Errorf("header request_id %q must be preserved, got %q", xReqID, e.RequestID)
+			}
+			if env.Err != "" && e.Code != env.Err {
+				t.Errorf("body error %q must pass through verbatim, got Code %q", env.Err, e.Code)
+			}
+		} else if e.RequestID != xReqID {
+			// Unparseable body: header value is preserved unchanged.
+			t.Errorf("unparseable body: header request_id %q must be preserved, got %q", xReqID, e.RequestID)
+		}
 	})
 }
 
@@ -91,6 +148,9 @@ func FuzzErrorDecode(f *testing.F) {
 // than struct DeepEqual but the right shape for types with
 // `omitempty` containers, where nil and empty diverge across one
 // round but converge after a normalising pass.
+//
+// MUST NOT be run with -race (crafted JSON through gojson; see
+// safejson.go).
 func FuzzRequestEncode(f *testing.F) {
 	seeds := []string{
 		`{"query":"q","namespace":"n","model":"m","dimensions":3}`,
@@ -142,6 +202,17 @@ func encodeIdempotent[T any](t *testing.T, raw []byte, first *T) {
 	release1()
 	second := new(T)
 	if err := safeUnmarshal(body1Copy, second); err != nil {
+		// A first encode the SDK cannot read back is a wire-corruption
+		// signal — EXCEPT for one benign case: a float that overflowed
+		// to ±Inf (e.g. a JSON literal like 1e40). gojson emits an
+		// invalid token for a non-finite float without erroring, and
+		// JSON has no infinity literal, so such a value is outside the
+		// round-trip domain. Skip only that case; any other re-decode
+		// failure is a real bug and must fail loudly (not silently
+		// no-op past genuine encode/decode asymmetry).
+		if !allFloatsFinite(first) {
+			return
+		}
 		t.Fatalf("re-decode of SDK-encoded %T failed: %v", first, err)
 	}
 	body2, release2, err := encodeJSON(*second)
@@ -194,6 +265,52 @@ func walkStringsValid(v reflect.Value) bool {
 		return true
 	case reflect.String:
 		return utf8.ValidString(v.String())
+	default:
+		return true
+	}
+}
+
+// allFloatsFinite walks v via reflection and returns false if any
+// reachable float field is NaN or ±Inf. Used by encodeIdempotent to
+// tell the one benign re-decode failure (a JSON literal that overflowed
+// a float to ±Inf, which has no JSON text form) apart from a genuine
+// encode/decode asymmetry that must fail the round-trip.
+func allFloatsFinite(v any) bool {
+	return walkFloatsFinite(reflect.ValueOf(v))
+}
+
+func walkFloatsFinite(v reflect.Value) bool {
+	switch v.Kind() {
+	case reflect.Pointer, reflect.Interface:
+		if v.IsNil() {
+			return true
+		}
+		return walkFloatsFinite(v.Elem())
+	case reflect.Struct:
+		for i := 0; i < v.NumField(); i++ {
+			if !walkFloatsFinite(v.Field(i)) {
+				return false
+			}
+		}
+		return true
+	case reflect.Slice, reflect.Array:
+		for i := 0; i < v.Len(); i++ {
+			if !walkFloatsFinite(v.Index(i)) {
+				return false
+			}
+		}
+		return true
+	case reflect.Map:
+		iter := v.MapRange()
+		for iter.Next() {
+			if !walkFloatsFinite(iter.Value()) {
+				return false
+			}
+		}
+		return true
+	case reflect.Float32, reflect.Float64:
+		f := v.Float()
+		return !math.IsInf(f, 0) && !math.IsNaN(f)
 	default:
 		return true
 	}
@@ -397,6 +514,9 @@ func FuzzContentType(f *testing.F) {
 // the decoder accepted (catches lossy json tags, struct-shape drift).
 // FuzzErrorDecode already covers the 4xx/5xx body shape; this fuzzer
 // focuses on the 2xx payload decoder.
+//
+// MUST NOT be run with -race (crafted JSON through gojson; see
+// safejson.go).
 func FuzzSearchResponseDecode(f *testing.F) {
 	seeds := []string{
 		`{}`,
@@ -419,6 +539,9 @@ func FuzzSearchResponseDecode(f *testing.F) {
 // Asserts non-panic plus the decode/encode round-trip property; the
 // PublishResponse fields (string + two uint64s) are simple enough
 // that any drift here is a likely shape regression.
+//
+// MUST NOT be run with -race (crafted JSON through gojson; see
+// safejson.go).
 func FuzzPublishResponseDecode(f *testing.F) {
 	seeds := []string{
 		`{}`,
@@ -440,6 +563,9 @@ func FuzzPublishResponseDecode(f *testing.F) {
 // responses carry nested arrays of diagnostic and completion objects
 // that exercise a larger portion of the struct decoder than a plain
 // PublishResponse. Same non-panic + round-trip property.
+//
+// MUST NOT be run with -race (crafted JSON through gojson; see
+// safejson.go).
 func FuzzLintResponseDecode(f *testing.F) {
 	seeds := []string{
 		`{"valid":true,"normalized":"x"}`,
@@ -453,6 +579,63 @@ func FuzzLintResponseDecode(f *testing.F) {
 	}
 	f.Fuzz(func(t *testing.T, body []byte) {
 		encodeIdempotent(t, body, new(LintResponse))
+	})
+}
+
+// FuzzMatchEventDecode covers the MatchEvent decoder — one of the two
+// JSON shapes that arrive over the long-lived subscribe stream (decoded
+// from frame Data in Subscription.Next). Same non-panic + encode-
+// idempotence property as the one-shot response decoders.
+//
+// MatchEvent.Score is a float32, so the seeds probe the float edges a
+// server could emit, including JSON numbers that overflow float32 to
+// ±Inf. Those have no JSON text form, so encodeIdempotent skips the
+// round-trip for them (see its comment); the decoder must still never
+// panic.
+//
+// MUST NOT be run with -race (crafted JSON through gojson; see
+// safejson.go).
+func FuzzMatchEventDecode(f *testing.F) {
+	seeds := []string{
+		`{}`,
+		`{"message_id":"m","score":0.9}`,
+		`{"message_id":"m"}`,
+		`{"score":1.5}`,
+		`{"score":3.5e38}`,  // overflows float32 → +Inf
+		`{"score":1e40}`,    // → +Inf
+		`{"score":-1e40}`,   // → -Inf
+		`{"score":1e-50}`,   // underflows to 0
+		`{"message_id":null}`,
+		`{"score":"not-a-number"}`,
+	}
+	for _, s := range seeds {
+		f.Add([]byte(s))
+	}
+	f.Fuzz(func(t *testing.T, body []byte) {
+		encodeIdempotent(t, body, new(MatchEvent))
+	})
+}
+
+// FuzzSubscribedEventDecode covers the SubscribedEvent decoder — the
+// payload of the first SSE frame, read inside subscribeOnce. Same
+// non-panic + round-trip property as the other server-JSON decoders.
+//
+// MUST NOT be run with -race (crafted JSON through gojson; see
+// safejson.go).
+func FuzzSubscribedEventDecode(f *testing.F) {
+	seeds := []string{
+		`{}`,
+		`{"subscription_id":"sub_1"}`,
+		`{"subscription_id":null}`,
+		`{"subscription_id":42}`,
+		`{"subscription_id":""}`,
+		`{"subscription_id":"s","extra":true}`,
+	}
+	for _, s := range seeds {
+		f.Add([]byte(s))
+	}
+	f.Fuzz(func(t *testing.T, body []byte) {
+		encodeIdempotent(t, body, new(SubscribedEvent))
 	})
 }
 
@@ -531,6 +714,141 @@ func FuzzValidatePublishItem(f *testing.F) {
 			if hasVec && anyNaNInf {
 				t.Fatalf("accepted vector with NaN/Inf")
 			}
+		}
+	})
+}
+
+// FuzzSubscribeStream drives a whole subscribe match stream end to end:
+// an arbitrary byte stream is fed through the SSE scanner, event
+// routing, frame-data JSON decode, sticky-error handling, and EOF
+// surfacing — the entire Subscription.Next path that no isolated
+// scanner- or decoder-level fuzzer exercises. The Subscription is
+// constructed white-box (this is package semantik) with a nil cancel,
+// which Close tolerates.
+//
+// Properties:
+//
+//   - never panics
+//   - Next yields either a MatchEvent or a terminal error, never both
+//   - sticky error: once Next returns a non-nil error, the next call
+//     returns the byte-identical error value (verbatim s.err)
+//   - clean end ⇒ io.EOF: a terminal error that is not a
+//     *SubscribeStreamError must be io.EOF; nothing else is allowed
+//   - match count is bounded by input size (the 2-byte/frame scanner
+//     bound is a safe upper bound for the heavier match frame)
+//   - the read loop always terminates (guarded explicitly)
+//
+// MUST NOT be run with -race (crafted JSON through gojson; see
+// safejson.go).
+func FuzzSubscribeStream(f *testing.F) {
+	seeds := []string{
+		"event: match\ndata: {\"message_id\":\"m\",\"score\":0.5}\n\n",
+		"event: match\ndata: {broken\n\n",
+		"event: heartbeat\ndata: {}\n\nevent: match\ndata: {}\n\n",
+		"event: match\ndata: {}\n\nevent: match\ndata: {}\n\n",
+		"",
+		strings.Repeat("event: match\ndata: {}\n\n", 1000),
+		"event: match\ndata: " + strings.Repeat("a", sse.MaxFrameBytes) + "\n\n",
+	}
+	for _, s := range seeds {
+		f.Add([]byte(s))
+	}
+
+	f.Fuzz(func(t *testing.T, data []byte) {
+		// Cap the input so fuzzing spends time on shape, not throughput
+		// (mirrors FuzzScanner's bound).
+		const readCap = 2 << 20
+		input := data
+		if len(input) > readCap {
+			input = input[:readCap]
+		}
+		sub := &Subscription{
+			scanner: sse.NewScanner(bytes.NewReader(input)),
+			body:    io.NopCloser(bytes.NewReader(nil)),
+		}
+		defer sub.Close()
+
+		// Background (never-cancelled) context: Next samples ctx.Err()
+		// only on entry (subscribe.go), so with this context the only
+		// terminal errors reachable are the clean io.EOF and the
+		// *SubscribeStreamError wraps — which is exactly what the
+		// dichotomy below asserts. A cancellable context could surface a
+		// raw context error and would break that assertion.
+		ctx := context.Background()
+		// Tightest frame is 2 bytes ("\n\n"); +1 for an unterminated
+		// trailing frame, +1 for the terminal-error read.
+		maxIter := len(input)/2 + 2
+		maxMatches := len(input)/2 + 1
+		matches := 0
+		for i := 0; ; i++ {
+			if i > maxIter {
+				t.Fatalf("Next did not converge to a terminal error within %d iterations", maxIter)
+			}
+			ev, err := sub.Next(ctx)
+			if err != nil {
+				// Property: an error never accompanies a value.
+				if ev != (MatchEvent{}) {
+					t.Fatalf("non-zero event %+v returned with error %v", ev, err)
+				}
+				// Property: a terminal error is either a clean io.EOF or a
+				// *SubscribeStreamError — never anything else.
+				var streamErr *SubscribeStreamError
+				if !errors.As(err, &streamErr) && !errors.Is(err, io.EOF) {
+					t.Fatalf("terminal error is neither io.EOF nor *SubscribeStreamError: %v", err)
+				}
+				// Property: the error is sticky and byte-identical.
+				ev2, err2 := sub.Next(ctx)
+				if err2 != err {
+					t.Fatalf("sticky-error violated: first %v then %v", err, err2)
+				}
+				if ev2 != (MatchEvent{}) {
+					t.Fatalf("non-zero event %+v on sticky-error read", ev2)
+				}
+				break
+			}
+			matches++
+			if matches > maxMatches {
+				t.Fatalf("match count %d exceeds bound %d for input len %d",
+					matches, maxMatches, len(input))
+			}
+		}
+	})
+}
+
+// FuzzSafeDecodeReader drives bytes through safeDecode's reader path —
+// the io.LimitReader(r, maxResponseBytes) cap that every round-trip
+// decoder fuzzer bypasses by calling safeUnmarshal directly. The
+// contract under test is panic-safety, not decode success: decode
+// errors are expected and ignored. The oversize branch forces input
+// past the 1 MiB cap so the truncation point is exercised.
+//
+// MUST NOT be run with -race (crafted JSON through gojson; see
+// safejson.go).
+func FuzzSafeDecodeReader(f *testing.F) {
+	seeds := []string{
+		`{`,
+		`{}`,
+		`{"results":[]}`,
+		`{"results":[{"message_id":"m","score":0.5}]}`,
+		`{"results":[`,
+		`{"results":[{"content":"x"}]}`,
+	}
+	for _, s := range seeds {
+		f.Add([]byte(s))
+	}
+	f.Fuzz(func(t *testing.T, body []byte) {
+		_ = safeDecode(bytes.NewReader(body), new(SearchResponse))
+		_ = safeDecode(bytes.NewReader(body), new(PublishResponse))
+		_ = safeDecode(bytes.NewReader(body), new(LintResponse))
+		// Straddle the maxResponseBytes (1 MiB) cap so the truncation
+		// path is reached. Errors are fine; a panic is not. Gate to
+		// small seeds and slice to just past the cap: crossing the
+		// boundary needs ~1 MiB, but ballooning further (or repeating a
+		// large body) only burns fuzz time without testing anything new.
+		if n := len(body); n > 0 && n <= 4096 {
+			big := bytes.Repeat(body, maxResponseBytes/n+2)
+			big = big[:maxResponseBytes+n] // > cap by one whole body, no more
+			_ = safeDecode(bytes.NewReader(big), new(SearchResponse))
 		}
 	})
 }
