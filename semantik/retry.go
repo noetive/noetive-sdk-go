@@ -21,6 +21,15 @@ import (
 // whichever comes first. Callers that need a separate per-attempt
 // budget should derive fresh sub-contexts in their own wrapper around
 // the SDK call.
+//
+// A delay the remaining budget cannot cover — the wait itself plus an
+// attempt after it, estimated from the attempt that just failed — is
+// not slept out. The error that asked for the wait is returned instead,
+// so a caller whose budget is too short to wait still learns what the
+// server said and when to come back, rather than only that time ran
+// out. When the budget ends during a wait that did fit, both errors are
+// returned joined: errors.Is against the context error and errors.As
+// against [Error] each reach their answer.
 type RetryPolicy interface {
 	ShouldRetry(attempt int, err error) (time.Duration, bool)
 }
@@ -151,12 +160,28 @@ func runWithRetryValue[T any](ctx context.Context, policy RetryPolicy, fn func(a
 	var zero T
 	attempt := 0
 	for {
+		started := time.Now()
 		v, err := fn(attempt)
 		if err == nil {
 			return v, nil
 		}
-		delay, ok := policy.ShouldRetry(attempt, err)
-		if !ok {
+		elapsed := time.Since(started)
+
+		delay, retry := policy.ShouldRetry(attempt, err)
+		if !retry {
+			return zero, err
+		}
+		// A retry is worth making only if the budget can pay for the wait
+		// and for an attempt after it. Sleeping out a wait it cannot afford
+		// spends the whole budget and then reports that nothing came back —
+		// discarding the code, the request id and the hint naming when to
+		// return, which is the only thing the caller can act on.
+		//
+		// The attempt that just failed is the only estimate available of what
+		// the next one costs. It errs towards answering rather than timing
+		// out: a retry that would have been quicker than its predecessor is
+		// skipped, and the server's own words are returned instead.
+		if deadline, bounded := ctx.Deadline(); bounded && time.Until(deadline) < delay+elapsed {
 			return zero, err
 		}
 		// time.NewTimer + Stop (vs time.After) so that a ctx.Done
@@ -166,7 +191,11 @@ func runWithRetryValue[T any](ctx context.Context, policy RetryPolicy, fn func(a
 		select {
 		case <-ctx.Done():
 			t.Stop()
-			return zero, ctx.Err()
+			// Both facts are true and the caller needs both: the error that
+			// asked for the wait says what happened and when to come back,
+			// and the context error says which side gave up. Returning the
+			// context error alone says nothing came back when something did.
+			return zero, errors.Join(err, ctx.Err())
 		case <-t.C:
 		}
 		attempt++

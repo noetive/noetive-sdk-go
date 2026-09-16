@@ -223,3 +223,85 @@ func TestTransientBackoff_Schedule(t *testing.T) {
 		}
 	}
 }
+
+// fixedWait asks for a wait long enough that nothing but the context can end
+// it, which is the condition the two tests below are about.
+type fixedWait struct{ delay time.Duration }
+
+func (w fixedWait) ShouldRetry(int, error) (time.Duration, bool) { return w.delay, true }
+
+// A budget that cannot cover the wait the server asked for must come back with
+// what the server said, not with a deadline. Sleeping out an unaffordable hint
+// spends the whole budget and then reports that nothing arrived, discarding the
+// code, the request id and the time to return — the only things the caller can
+// act on.
+func TestAWaitTheBudgetCannotAffordReturnsTheRefusalInstead(t *testing.T) {
+	refusal := &Error{
+		Code:       CodeUnavailable,
+		Message:    "embedder unavailable",
+		RequestID:  "req_unaffordable",
+		RetryAfter: time.Hour,
+		HTTPStatus: http.StatusServiceUnavailable,
+	}
+	attempts := 0
+
+	// Live, but far shorter than the hour the refusal asks for.
+	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
+	defer cancel()
+
+	_, err := runWithRetryValue(ctx, fixedWait{delay: time.Hour}, func(int) (struct{}, error) {
+		attempts++
+		return struct{}{}, refusal
+	})
+
+	var got *Error
+	if !errors.As(err, &got) {
+		t.Fatalf("the refusal was discarded, leaving nothing to act on: %v", err)
+	}
+	if got.Code != CodeUnavailable || got.RequestID != "req_unaffordable" || got.RetryAfter != time.Hour {
+		t.Errorf("the refusal arrived stripped: %+v", got)
+	}
+	// Declining the wait is the point: the budget is still unspent, so the
+	// caller is told what happened rather than that time ran out.
+	if errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("a refusal that did arrive was reported as the budget running out: %v", err)
+	}
+	if attempts != 1 {
+		t.Errorf("expected the unaffordable retry to be declined, got %d attempts", attempts)
+	}
+}
+
+// A wait the budget could afford, ended early by the caller withdrawing. The
+// refusal that asked for the wait still has to reach the caller: both facts are
+// true, and each answers a different question — what the server said, and which
+// side gave up.
+func TestAnInterruptedWaitKeepsTheRefusalThatAskedForIt(t *testing.T) {
+	refusal := &Error{
+		Code:       CodeUnavailable,
+		Message:    "embedder unavailable",
+		RequestID:  "req_interrupted",
+		RetryAfter: time.Hour,
+		HTTPStatus: http.StatusServiceUnavailable,
+	}
+
+	// No deadline, so the wait is entered rather than declined as unaffordable.
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	_, err := runWithRetryValue(ctx, fixedWait{delay: time.Hour}, func(int) (struct{}, error) {
+		// Withdraw while the wait is in flight.
+		cancel()
+		return struct{}{}, refusal
+	})
+
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("the caller cannot tell which side gave up: %v", err)
+	}
+	var got *Error
+	if !errors.As(err, &got) {
+		t.Fatalf("the refusal that caused the wait was discarded: %v", err)
+	}
+	if got.Code != CodeUnavailable || got.RequestID != "req_interrupted" || got.RetryAfter != time.Hour {
+		t.Errorf("the refusal arrived stripped: %+v", got)
+	}
+}
