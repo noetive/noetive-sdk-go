@@ -26,7 +26,7 @@ import "strings"
 // to the service that issued it. The day a new key family or scheme appears, nothing
 // here needs to change.
 func WithAuthorization(header string) Option {
-	return func(c *config) { c.authHeader = header }
+	return func(c *config) { c.authHeader, c.authSet = header, true }
 }
 
 // NewForwarding constructs a Client that carries whatever credential it is given,

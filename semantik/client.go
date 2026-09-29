@@ -70,7 +70,9 @@ func (c *Client) GoString() string {
 // an empty or whitespace-only key returns [ErrInvalidAPIKey]. Deeper
 // validation is the server's job.
 //
-// Opts are applied in order; later values win.
+// Opts are applied in order; later values win. [WithAuthorization] is
+// refused with [ErrAuthorizationWithKey]: New always sends the key it
+// was given.
 func New(apiKey string, opts ...Option) (*Client, error) {
 	if !apiKeyNonEmpty(apiKey) {
 		return nil, ErrInvalidAPIKey
@@ -80,6 +82,9 @@ func New(apiKey string, opts ...Option) (*Client, error) {
 	}
 	for _, o := range opts {
 		o(&cfg)
+	}
+	if cfg.authSet {
+		return nil, ErrAuthorizationWithKey
 	}
 	if cfg.httpClient == nil {
 		cfg.httpClient = defaultHTTPClient()

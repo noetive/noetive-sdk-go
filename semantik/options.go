@@ -28,6 +28,10 @@ type config struct {
 	// [WithAuthorization] for a relay. [New] builds its own from the
 	// API key it was given.
 	authHeader string
+
+	// authSet records that [WithAuthorization] was applied, even with
+	// an empty header, so [New] can refuse it rather than drop it.
+	authSet bool
 }
 
 // WithBaseURL overrides the default Semantik endpoint. Useful for

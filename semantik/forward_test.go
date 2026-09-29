@@ -1,6 +1,7 @@
 package semantik_test
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -63,5 +64,21 @@ func TestNewStillRefusesAnEmptyKey(t *testing.T) {
 	}
 	if _, err := semantik.New("   "); err == nil {
 		t.Error("New accepted a whitespace key")
+	}
+}
+
+// TestNewRefusesAForwardedCredential guards the seam between the two constructors.
+//
+// New builds its header from the key it was given, so a WithAuthorization passed
+// alongside would otherwise be dropped without a word, and the caller would send a
+// credential other than the one they chose.
+func TestNewRefusesAForwardedCredential(t *testing.T) {
+	t.Parallel()
+
+	for _, header := range []string{"Bearer keyu_other", ""} {
+		_, err := semantik.New("keyu_abc", semantik.WithAuthorization(header))
+		if !errors.Is(err, semantik.ErrAuthorizationWithKey) {
+			t.Errorf("New with WithAuthorization(%q): err = %v, want ErrAuthorizationWithKey", header, err)
+		}
 	}
 }

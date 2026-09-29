@@ -192,6 +192,11 @@ var (
 	// NOETIVE_KEY_SECRET environment variable is unset or empty.
 	ErrMissingAPIKey = errors.New("semantik: NOETIVE_KEY_SECRET not set")
 
+	// ErrAuthorizationWithKey is returned by New when [WithAuthorization]
+	// is passed alongside an API key. New sends the key it was given;
+	// a forwarded credential belongs with [NewForwarding].
+	ErrAuthorizationWithKey = errors.New("semantik: WithAuthorization is for NewForwarding, not New")
+
 	// ErrMalformedSSE matches any malformed-stream error surfaced by
 	// the SDK. Use with [errors.Is]; to inspect the underlying parse
 	// cause, use [errors.As] against a *[MalformedSSEError].
