@@ -17,13 +17,19 @@
 package integration
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"io"
+	"net/http"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
-	"github.com/noetive/noetive-sdk-go/semantik"
+	gojson "github.com/goccy/go-json"
+
+	"go.noetive.io/noetive-sdk-go/semantik"
 )
 
 // ProdBaseURL is the production Semantik endpoint. Hardcoded
@@ -86,6 +92,53 @@ func unitVector(dim int) []float32 {
 		v[i] = float32(i%100) / 100.0
 	}
 	return v
+}
+
+// wireError is the server's JSON error envelope, decoded without going
+// through the SDK's own error types. Keeping it separate is the point:
+// a test that decoded with semantik.Error could not tell a server
+// contract change from an SDK decoding change.
+type wireError struct {
+	Err       string `json:"error"`
+	Message   string `json:"message"`
+	RequestID string `json:"request_id"`
+}
+
+// rawPublish POSTs body to /v1/publish over plain HTTP, bypassing the
+// SDK entirely, and returns the status and decoded error envelope.
+//
+// It exists for one job: observing a server rejection that the SDK's
+// preflight validation would otherwise short-circuit before the request
+// ever left the process. Tests that exercise the SDK's own behaviour
+// should call the client, not this.
+func rawPublish(ctx context.Context, t *testing.T, body string) (int, wireError) {
+	t.Helper()
+	key := os.Getenv("NOETIVE_KEY_SECRET")
+	if key == "" {
+		t.Skip("NOETIVE_KEY_SECRET not set; skipping integration test")
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		ProdBaseURL+"/v1/publish", strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("http.NewRequestWithContext: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+key)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("raw publish: %v", err)
+	}
+	defer resp.Body.Close()
+	data, err := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
+	if err != nil {
+		t.Fatalf("read raw publish body: %v", err)
+	}
+	var env wireError
+	if err := gojson.Unmarshal(data, &env); err != nil {
+		t.Fatalf("decode raw publish body %q: %v", data, err)
+	}
+	return resp.StatusCode, env
 }
 
 // logElapsed prints the duration since start under op's label so the

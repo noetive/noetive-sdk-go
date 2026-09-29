@@ -57,6 +57,12 @@ func (NoRetry) ShouldRetry(int, error) (time.Duration, bool) { return 0, false }
 //   - [CodeNamespaceUnavailable]
 //   - [CodeMeteringUnavailable]
 //
+// [CodeModelNotProvisioned] is retried only when the server sends a
+// retry hint. The code is returned both for a namespace that will
+// never carry the requested (model, dimensions) pair and for one that
+// is provisioned but not yet ready to serve; the hint is what separates
+// the waitable case from the permanent one.
+//
 // The server's retry hint ([Error.RetryAfter]) is honoured when
 // present; when the hint is missing the SDK falls back to a
 // 100 ms / 2 s / 5 s / 10 s schedule, saturating at 10 s for later
@@ -119,6 +125,19 @@ func (r transientRetry) ShouldRetry(attempt int, err error) (time.Duration, bool
 			return d, true
 		}
 		return transientBackoff(attempt), true
+	case CodeModelNotProvisioned:
+		// One code covers two conditions the client cannot tell apart:
+		// a namespace that will never carry this (model, dimensions)
+		// pair, and one whose embedder is still being provisioned. The
+		// server distinguishes them by sending a retry hint on the
+		// second, so the hint — not the code — decides. Absent a hint
+		// the pair is treated as permanently unsatisfiable and fails
+		// fast, because no amount of waiting fixes a model name that
+		// was never provisioned.
+		if d := apiErr.RetryAfter; d > 0 {
+			return d, true
+		}
+		return 0, false
 	default:
 		// Forward-compat: any code not in the retryable set above —
 		// including codes added by future server versions that the SDK

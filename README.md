@@ -5,12 +5,12 @@ own subpackage with its own godoc, examples, and integration tests.
 
 | Service | Import path | Docs |
 |---|---|---|
-| Semantik — semantic search, publish, subscribe | `github.com/noetive/noetive-sdk-go/semantik` | [godoc](https://pkg.go.dev/github.com/noetive/noetive-sdk-go/semantik) · [README](semantik/README.md) |
+| Semantik — semantic search, publish, subscribe | `go.noetive.io/noetive-sdk-go/semantik` | [godoc](https://pkg.go.dev/go.noetive.io/noetive-sdk-go/semantik) · [README](semantik/README.md) |
 
 Requires Go 1.25.2 or newer.
 
 ```
-go get github.com/noetive/noetive-sdk-go/semantik
+go get go.noetive.io/noetive-sdk-go/semantik
 ```
 
 ## Example
@@ -19,7 +19,7 @@ Init a client, then publish, search, and stream live matches — using
 the response from each call. Defaults target the `global` namespace.
 
 ```go
-import "github.com/noetive/noetive-sdk-go/semantik"
+import "go.noetive.io/noetive-sdk-go/semantik"
 
 ctx := context.Background()
 c, _ := semantik.NewFromEnv() // reads NOETIVE_KEY_SECRET

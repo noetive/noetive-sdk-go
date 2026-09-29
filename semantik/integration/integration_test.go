@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/noetive/noetive-sdk-go/semantik"
+	"go.noetive.io/noetive-sdk-go/semantik"
 )
 
 func TestHealth(t *testing.T) {
@@ -187,28 +187,52 @@ func TestPublish_InvalidRequest(t *testing.T) {
 	c := setup(t)
 	ctx, cancel := context.WithTimeout(t.Context(), requestTimeout)
 	defer cancel()
-	// Server-side rejection: dimensions mismatch is caught server-side
-	// (client-side validator would accept a length-3 vector at dims=3).
+	// A vector whose length disagrees with the declared dimensions is
+	// rejected by both sides: the server returns 400 invalid_request,
+	// and the SDK's preflight refuses to send it at all. The SDK is the
+	// stricter of the two, so the request never reaches the wire — which
+	// means asserting only on the SDK would silently stop testing the
+	// server, and asserting only on the server would not notice the
+	// preflight drifting away from it.
+	//
+	// So assert the agreement itself. If the server ever stops calling
+	// this invalid_request, or the preflight starts calling it something
+	// else, one half of this test fails and names which side moved.
+	const mismatched = `{"namespace":"global","model":"Qwen3-Embedding-4B",` +
+		`"dimensions":1024,"items":[{"vector":[1,2,3]}]}`
+
 	start := time.Now()
+	status, env := rawPublish(ctx, t, mismatched)
+	logElapsed(t, "Publish invalid (raw 400)", start)
+	if status != 400 {
+		t.Errorf("server status = %d, want 400 (envelope: %+v)", status, env)
+	}
+	if env.Err != semantik.CodeInvalidRequest {
+		t.Errorf("server error = %q, want %q", env.Err, semantik.CodeInvalidRequest)
+	}
+	if env.RequestID == "" {
+		t.Error("server omitted request_id; error is not correlatable")
+	}
+
+	// Same logical request through the SDK. HTTPStatus 0 is the assertion
+	// that it was stopped preflight rather than round-tripped.
+	start = time.Now()
 	_, err := c.Publish(ctx, semantik.PublishRequest{
 		Namespace:  testNamespace,
 		Model:      testModel,
 		Dimensions: testDims,
-		Items:      []semantik.PublishItem{{Vector: []float32{1, 2, 3}}}, // dim mismatch
+		Items:      []semantik.PublishItem{{Vector: []float32{1, 2, 3}}},
 	})
-	logElapsed(t, "Publish invalid (400)", start)
-	if err == nil {
-		t.Fatal("expected server-side invalid_request")
-	}
+	logElapsed(t, "Publish invalid (preflight)", start)
 	if !errors.Is(err, semantik.ErrInvalidRequest) {
-		t.Errorf("want ErrInvalidRequest, got %v", err)
+		t.Fatalf("preflight: want ErrInvalidRequest, got %v", err)
 	}
 	var apiErr *semantik.Error
 	if !errors.As(err, &apiErr) {
 		t.Fatal("errors.As failed")
 	}
-	if apiErr.HTTPStatus != 400 {
-		t.Errorf("HTTPStatus = %d, want 400 (server-side)", apiErr.HTTPStatus)
+	if apiErr.HTTPStatus != 0 {
+		t.Errorf("HTTPStatus = %d, want 0 (preflight, never sent)", apiErr.HTTPStatus)
 	}
 }
 

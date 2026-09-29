@@ -23,6 +23,11 @@ type config struct {
 	httpClient Doer
 	retry      RetryPolicy
 	baseURL    string
+
+	// authHeader is the Authorization header, set only by
+	// [WithAuthorization] for a relay. [New] builds its own from the
+	// API key it was given.
+	authHeader string
 }
 
 // WithBaseURL overrides the default Semantik endpoint. Useful for

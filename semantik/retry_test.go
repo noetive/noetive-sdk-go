@@ -127,6 +127,57 @@ func TestTransientRetry_RetriesMeteringUnavailable_BackoffSchedule(t *testing.T)
 	}
 }
 
+// model_not_provisioned is returned both while an embedder is still
+// being provisioned and for a (model, dimensions) pair that will never
+// exist. The retry hint is the only thing separating them, so these two
+// tests pin both sides of that gate.
+
+func TestTransientRetry_RetriesModelNotProvisioned_WithHint(t *testing.T) {
+	var attempts atomic.Int32
+	_, c := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if attempts.Add(1) == 1 {
+			writeError(t, w, http.StatusBadRequest, CodeModelNotProvisioned,
+				"namespace \"global\" has no entry for model \"m\" dimensions 3", 50)
+			return
+		}
+		writeJSON(t, w, http.StatusOK, PublishResponse{MessageID: "msg_provisioned"})
+	})
+	c, _ = New(testKey, WithBaseURL(c.baseURL), WithRetry(TransientRetry(2)))
+	res, err := c.Publish(t.Context(), PublishRequest{
+		Namespace: "n", Model: "m", Dimensions: 3,
+		Items: []PublishItem{{Text: "x"}},
+	})
+	if err != nil {
+		t.Fatalf("Publish: %v", err)
+	}
+	if res.MessageID != "msg_provisioned" {
+		t.Errorf("MessageID = %q, want msg_provisioned", res.MessageID)
+	}
+	if attempts.Load() != 2 {
+		t.Errorf("hinted model_not_provisioned should be retried; got %d attempts", attempts.Load())
+	}
+}
+
+func TestTransientRetry_DoesNotRetryModelNotProvisioned_WithoutHint(t *testing.T) {
+	var attempts atomic.Int32
+	_, c := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		attempts.Add(1)
+		writeError(t, w, http.StatusBadRequest, CodeModelNotProvisioned,
+			"namespace \"global\" has no entry for model \"no-such-model\" dimensions 3", 0)
+	})
+	c, _ = New(testKey, WithBaseURL(c.baseURL), WithRetry(TransientRetry(5)))
+	_, err := c.Publish(t.Context(), PublishRequest{
+		Namespace: "n", Model: "m", Dimensions: 3,
+		Items: []PublishItem{{Text: "x"}},
+	})
+	if !errors.Is(err, ErrModelNotProvisioned) {
+		t.Fatalf("want ErrModelNotProvisioned, got %v", err)
+	}
+	if attempts.Load() != 1 {
+		t.Errorf("unhinted model_not_provisioned is terminal; expected 1 attempt, got %d", attempts.Load())
+	}
+}
+
 func TestTransientRetry_DoesNotRetryNotBillable(t *testing.T) {
 	var attempts atomic.Int32
 	_, c := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {

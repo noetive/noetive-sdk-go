@@ -15,7 +15,7 @@ import (
 	"log"
 	"time"
 
-	"github.com/noetive/noetive-sdk-go/semantik"
+	"go.noetive.io/noetive-sdk-go/semantik"
 )
 
 func main() {

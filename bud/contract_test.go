@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/noetive/noetive-sdk-go/bud"
+	"go.noetive.io/noetive-sdk-go/bud"
 )
 
 // goldenPath is the server's own description of its shapes, vendored.

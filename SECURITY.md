@@ -4,7 +4,7 @@
 
 This document covers vulnerabilities in the `noetive-sdk-go` source
 tree: the Go packages under
-`github.com/noetive/noetive-sdk-go/...`, their direct
+`go.noetive.io/noetive-sdk-go/...`, their direct
 dependencies as pinned in `go.mod`, and the example programs under
 each service subpackage (e.g. `semantik/examples/`).
 

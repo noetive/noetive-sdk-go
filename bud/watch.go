@@ -10,7 +10,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/noetive/noetive-sdk-go/internal/sse"
+	"go.noetive.io/noetive-sdk-go/internal/sse"
 )
 
 // Watch: the journal as a stream, on one connection.

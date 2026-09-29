@@ -13,7 +13,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/noetive/noetive-sdk-go/internal/sse"
+	"go.noetive.io/noetive-sdk-go/internal/sse"
 )
 
 // FuzzErrorDecode feeds arbitrary bytes into decodeError across the

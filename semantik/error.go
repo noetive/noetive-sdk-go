@@ -49,9 +49,11 @@ type Error struct {
 	RequestID string
 
 	// RetryAfter is the server's retry hint. Zero means do not retry.
-	// Populated on HTTP 429 (CodeBackpressure) and HTTP 503
-	// (CodeUnavailable), from the retry_after_ms body field when
-	// present and the Retry-After header otherwise.
+	// Read from the retry_after_ms body field when present and the
+	// Retry-After header otherwise, on any error response that carries
+	// one — most often HTTP 429 (CodeBackpressure) and HTTP 503
+	// (CodeUnavailable), but also HTTP 400 CodeModelNotProvisioned,
+	// where the hint is what marks the condition as waitable.
 	RetryAfter time.Duration
 
 	// HTTPStatus is the numeric status code. Zero indicates the Error

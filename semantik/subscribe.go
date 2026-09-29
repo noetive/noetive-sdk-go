@@ -11,7 +11,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/noetive/noetive-sdk-go/internal/sse"
+	"go.noetive.io/noetive-sdk-go/internal/sse"
 )
 
 // SubscribeRequest is the body of POST /v1/subscribe.

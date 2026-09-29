@@ -6,18 +6,18 @@ embedding vectors, query them with the SemQL query language, and
 subscribe to live match streams over Server-Sent Events.
 
 ```
-go get github.com/noetive/noetive-sdk-go/semantik
+go get go.noetive.io/noetive-sdk-go/semantik
 ```
 
 Requires Go 1.25.2 or newer.
 
-Full API documentation: https://pkg.go.dev/github.com/noetive/noetive-sdk-go/semantik
+Full API documentation: https://pkg.go.dev/go.noetive.io/noetive-sdk-go/semantik
 
 ## Quick start
 
 ```go
 import "context"
-import "github.com/noetive/noetive-sdk-go/semantik"
+import "go.noetive.io/noetive-sdk-go/semantik"
 
 c, err := semantik.New("keyu_...")   // or semantik.NewFromEnv()
 if err != nil { log.Fatal(err) }

@@ -1,4 +1,4 @@
-module github.com/noetive/noetive-sdk-go
+module go.noetive.io/noetive-sdk-go
 
 go 1.25.2
 

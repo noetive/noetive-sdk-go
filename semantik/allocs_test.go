@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/noetive/noetive-sdk-go/internal/sse"
+	"go.noetive.io/noetive-sdk-go/internal/sse"
 )
 
 // TestZeroAllocHot guards the hot encode and parse paths against

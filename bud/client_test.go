@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/noetive/noetive-sdk-go/bud"
+	"go.noetive.io/noetive-sdk-go/bud"
 )
 
 // What a caller sees, and the one distinction the whole package turns on: a
