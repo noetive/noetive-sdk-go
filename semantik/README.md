@@ -61,7 +61,7 @@ server is the source of truth for everything else.
 | Variable | Required | Purpose |
 |---|---|---|
 | `NOETIVE_KEY_SECRET` | yes | Your API key |
-| `NOETIVE_BASE_URL` | no | Override endpoint (defaults to `https://semantik.noetive.io`) |
+| `NOETIVE_SEMANTIK_BASE_URL` | no | Override endpoint (defaults to `https://semantik.noetive.io`) |
 
 ## Error handling
 

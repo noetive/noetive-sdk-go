@@ -19,7 +19,7 @@ func ExampleNew() {
 }
 
 func ExampleNewFromEnv() {
-	// Reads NOETIVE_KEY_SECRET (required) and NOETIVE_BASE_URL (optional).
+	// Reads NOETIVE_KEY_SECRET (required) and NOETIVE_SEMANTIK_BASE_URL (optional).
 	c, err := semantik.NewFromEnv()
 	if err != nil {
 		log.Fatal(err)

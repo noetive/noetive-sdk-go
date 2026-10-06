@@ -43,7 +43,7 @@ const (
 
 	// defaultBaseURL is the production Semantik endpoint.
 	//
-	// This and the NOETIVE_KEY_SECRET / NOETIVE_BASE_URL environment
+	// This and the NOETIVE_KEY_SECRET / NOETIVE_SEMANTIK_BASE_URL environment
 	// variables are the SDK's entire defaulting surface. The targeting
 	// fields — Namespace, Model and Dimensions — are deliberately NOT
 	// defaulted: every publish, search and subscribe must set them

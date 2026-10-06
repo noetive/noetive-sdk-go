@@ -20,7 +20,7 @@ const (
 	mimeSSE  = "text/event-stream"
 
 	envAPIKey  = "NOETIVE_KEY_SECRET"
-	envBaseURL = "NOETIVE_BASE_URL"
+	envBaseURL = "NOETIVE_SEMANTIK_BASE_URL"
 
 	pathSearch    = "/v1/search"
 	pathPublish   = "/v1/publish"
@@ -108,7 +108,7 @@ func New(apiKey string, opts ...Option) (*Client, error) {
 }
 
 // NewFromEnv constructs a Client using NOETIVE_KEY_SECRET and (optionally)
-// NOETIVE_BASE_URL from the process environment. Returns
+// NOETIVE_SEMANTIK_BASE_URL from the process environment. Returns
 // [ErrMissingAPIKey] when NOETIVE_KEY_SECRET is unset or empty.
 func NewFromEnv(opts ...Option) (*Client, error) {
 	key := os.Getenv(envAPIKey)

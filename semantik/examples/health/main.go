@@ -5,7 +5,7 @@
 // Usage:
 //
 //	go run ./examples/health                  # defaults to production
-//	NOETIVE_BASE_URL=... go run ./examples/health
+//	NOETIVE_SEMANTIK_BASE_URL=... go run ./examples/health
 package main
 
 import (
@@ -27,7 +27,7 @@ func main() {
 		key = "keyu_placeholder_for_health_only"
 	}
 	opts := []semantik.Option{}
-	if base := os.Getenv("NOETIVE_BASE_URL"); base != "" {
+	if base := os.Getenv("NOETIVE_SEMANTIK_BASE_URL"); base != "" {
 		opts = append(opts, semantik.WithBaseURL(base))
 	}
 

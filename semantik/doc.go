@@ -29,7 +29,7 @@
 // contents, so deeper validation is left to the server.
 //
 // Environment constructor: [NewFromEnv] reads NOETIVE_KEY_SECRET (required)
-// and NOETIVE_BASE_URL (optional, defaults to https://semantik.noetive.io).
+// and NOETIVE_SEMANTIK_BASE_URL (optional, defaults to https://semantik.noetive.io).
 //
 // # Error model
 //
