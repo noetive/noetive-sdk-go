@@ -462,7 +462,7 @@ func (c *Client) call(ctx context.Context, op string, in, out any) error {
 		// A status means the request reached the service, and repeating it
 		// could repeat its effect.
 		var local *Error
-		if errors.As(err, &local) {
+		if errors.As(err, &local) || errors.Is(err, errRedirectRefused) {
 			return err
 		}
 		if status != 0 || !c.mayRetry(attempt, op, in) {

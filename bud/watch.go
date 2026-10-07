@@ -229,7 +229,7 @@ func (c *Client) connect(ctx context.Context, in WaitInput, body []byte) (*http.
 		if err == nil {
 			return resp, nil
 		}
-		if !c.mayRetry(attempt, "watch", in) {
+		if errors.Is(err, errRedirectRefused) || !c.mayRetry(attempt, "watch", in) {
 			return nil, err
 		}
 		if waitErr := c.retry.Wait(ctx, attempt); waitErr != nil {
@@ -245,7 +245,7 @@ func (s *Stream) readOpen() error {
 			return err
 		}
 		return &Error{
-			Code: CodeMalformedResponse, RequestID: s.requestID,
+			Code: CodeMalformedResponse, HTTPStatus: http.StatusOK, RequestID: s.requestID,
 			Message: "the stream closed before its opening frame",
 		}
 	}
@@ -253,7 +253,7 @@ func (s *Stream) readOpen() error {
 	frame := s.scanner.Frame()
 	if frame.Event != eventOpen {
 		return &Error{
-			Code: CodeMalformedResponse, RequestID: s.requestID,
+			Code: CodeMalformedResponse, HTTPStatus: http.StatusOK, RequestID: s.requestID,
 			Message: "the stream began with a " + quoted(frame.Event) + " frame rather than " + quoted(eventOpen),
 		}
 	}
@@ -263,7 +263,7 @@ func (s *Stream) readOpen() error {
 	}
 	if err := json.Unmarshal([]byte(frame.Data), &open); err != nil {
 		return &Error{
-			Code: CodeMalformedResponse, RequestID: s.requestID,
+			Code: CodeMalformedResponse, HTTPStatus: http.StatusOK, RequestID: s.requestID,
 			Message: fmt.Sprintf("the opening frame did not decode: %v", err),
 		}
 	}
@@ -320,7 +320,7 @@ func (s *Stream) nextBatch() (WaitOutput, bool) {
 			s.err = s.scanner.Err()
 			if errors.Is(s.err, sse.ErrFrameTooLarge) {
 				s.err = &Error{
-					Code: CodeMalformedResponse, RequestID: s.requestID,
+					Code: CodeMalformedResponse, HTTPStatus: http.StatusOK, RequestID: s.requestID,
 					Message: fmt.Sprintf("a stream frame exceeded %d bytes", maxFrameBytes),
 				}
 			}
@@ -339,7 +339,7 @@ func (s *Stream) nextBatch() (WaitOutput, bool) {
 		var batch WaitOutput
 		if err := json.Unmarshal([]byte(frame.Data), &batch); err != nil {
 			s.err = &Error{
-				Code: CodeMalformedResponse, RequestID: s.requestID,
+				Code: CodeMalformedResponse, HTTPStatus: http.StatusOK, RequestID: s.requestID,
 				Message: fmt.Sprintf("a stream frame did not decode: %v", err),
 			}
 			return WaitOutput{}, false
@@ -353,6 +353,8 @@ func (s *Stream) nextBatch() (WaitOutput, bool) {
 		// A refusal mid-stream ends it. The server does not continue after one, and
 		// a client that kept reading would look healthy while receiving nothing.
 		if batch.Error != nil {
+			// The stream answered 200; the refusal came on it, not before sending.
+			batch.Error.HTTPStatus = http.StatusOK
 			if batch.Error.RequestID == "" {
 				batch.Error.RequestID = s.requestID
 			}

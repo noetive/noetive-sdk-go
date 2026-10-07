@@ -317,6 +317,9 @@ func TestWaitReturnsARefusalAsAValue(t *testing.T) {
 		if out.Cursor != "41" {
 			t.Errorf("Cursor = %q, want the stream's position, not the frame's empty one", out.Cursor)
 		}
+		if out.Error.HTTPStatus != http.StatusOK {
+			t.Errorf("status %d; a refusal on an open stream arrived with the stream's 200, not before sending", out.Error.HTTPStatus)
+		}
 		if out.Error.RequestID != "request_01frame" {
 			t.Errorf("RequestID = %q; the frame's own id names the failure", out.Error.RequestID)
 		}
@@ -407,6 +410,10 @@ func TestAMalformedStreamIsNotAnAnswer(t *testing.T) {
 			out, err := mustClient(t, srv.URL).Wait(t.Context(), bud.WaitInput{TimeoutSeconds: 5})
 			if !errors.Is(err, bud.ErrMalformedResponse) {
 				t.Errorf("err = %v, out = %+v; want malformed_response", err, out)
+			}
+			var e *bud.Error
+			if errors.As(err, &e) && e.HTTPStatus == 0 {
+				t.Error("a stream that could not be read reports status 0, which means refused before sending")
 			}
 		})
 	}

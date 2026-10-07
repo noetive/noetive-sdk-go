@@ -3,6 +3,7 @@ package bud
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"runtime"
 	"strings"
@@ -184,9 +185,13 @@ func defaultHTTPClient() *http.Client {
 // Following one would re-attach the Authorization header to whatever Location
 // names, which is a host the caller never chose.
 func refuseRedirect(req *http.Request, _ []*http.Request) error {
-	return errors.New("bud: refusing to follow a redirect to " + req.URL.Host +
-		"; a redirect would send the credential somewhere the caller did not name")
+	return fmt.Errorf("%w to %s; a redirect would send the credential somewhere the caller did not name",
+		errRedirectRefused, req.URL.Host)
 }
+
+// errRedirectRefused marks a refused redirect. It is an answer from the server,
+// not a connection that failed, so it is never retried.
+var errRedirectRefused = errors.New("bud: refusing to follow a redirect")
 
 // UserAgent identifies this SDK to the server.
 //

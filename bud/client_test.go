@@ -314,13 +314,25 @@ func TestARedirectIsRefused(t *testing.T) {
 	}))
 	defer other.Close()
 
+	var redirects atomic.Int64
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		redirects.Add(1)
 		http.Redirect(w, r, other.URL+"/v1/me.describe", http.StatusTemporaryRedirect)
 	}))
 	defer srv.Close()
 
-	if _, err := mustClient(t, srv.URL).DescribeMe(t.Context()); err == nil {
+	// A retrying policy, to prove a redirect is an answer and not a failed
+	// connection: it is refused once and not asked again.
+	c, err := bud.New("test-token", bud.WithBaseURL(srv.URL),
+		bud.WithRetry(bud.TransientRetry{Attempts: 2, Backoff: []time.Duration{time.Millisecond}}))
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if _, err := c.DescribeMe(t.Context()); err == nil {
 		t.Error("a redirect was followed")
+	}
+	if n := redirects.Load(); n != 1 {
+		t.Errorf("the redirect was asked for %d times; a refused redirect is not retried", n)
 	}
 	if n := elsewhere.Load(); n != 0 {
 		t.Errorf("the credential reached another host %d times", n)
