@@ -221,6 +221,6 @@ in the `User-Agent` of every outgoing request:
 noetive-sdk-go/<Version> (<go-runtime>; <goos>/<goarch>)
 ```
 
-## Licence
+## License
 
-Noetive Commercial. See https://noetive.io/terms for the full text.
+Apache License 2.0. See [`LICENSE`](../LICENSE).

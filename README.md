@@ -134,3 +134,7 @@ which refusals are worth retrying.
 </details>
 
 See [SECURITY.md](SECURITY.md) for the disclosure policy.
+
+## License
+
+Apache License 2.0. See [`LICENSE`](LICENSE).
