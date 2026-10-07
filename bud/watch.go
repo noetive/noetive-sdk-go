@@ -49,9 +49,14 @@ type Stream struct {
 	body    io.ReadCloser
 	scanner *sse.Scanner
 
-	cursor  string
-	pending []JournalEvent
-	err     error
+	cursor string // the latest the server sent
+
+	// delivered is the cursor after the last event handed to the caller, which
+	// is what Cursor reports: resuming there must not skip the rest of a batch
+	// the caller stopped part-way through.
+	delivered string
+	pending   []JournalEvent
+	err       error
 
 	requestID string
 }
@@ -77,10 +82,11 @@ func (c *Client) Watch(ctx context.Context, in WaitInput) (*Stream, error) {
 //
 // The window is [WaitInput.TimeoutSeconds], at most [MaxWaitSeconds], which is
 // also the default. It starts once the stream is open, so a slow handshake does
-// not eat into it; the handshake itself is bounded by the caller's context and,
-// on the default transport, by [DefaultResponseTimeout]. Within the window Wait
-// returns the first batch carrying events, whole, with the cursor after it; pass
-// that cursor to the next Wait.
+// not eat into it; the handshake itself is bounded by the caller's context and
+// by [DefaultResponseTimeout], for the headers on the default transport and for
+// the opening frame on any. Within the window Wait returns the first batch
+// carrying events, whole, with the cursor after it; pass that cursor to the next
+// Wait.
 //
 // An empty result is success: see [WaitOutput.Empty]. It carries the latest
 // cursor the stream gave, so the next Wait resumes where this one stopped.
@@ -135,7 +141,7 @@ func (c *Client) Wait(ctx context.Context, in WaitInput) (WaitOutput, error) {
 			return WaitOutput{}, ctx.Err()
 		case closed.Load():
 			// The window closed with nothing in it. Not a failure.
-			return WaitOutput{Cursor: s.Cursor()}, nil
+			return WaitOutput{Cursor: s.cursor}, nil
 		case s.Err() != nil:
 			return WaitOutput{}, s.Err()
 		default:
@@ -198,8 +204,14 @@ func (c *Client) open(ctx context.Context, in WaitInput) (*Stream, *Error, error
 	s := &Stream{body: resp.Body, scanner: sse.NewScannerLimit(resp.Body, maxFrameBytes), requestID: requestID}
 
 	// Read the handshake here, so that a server which never sends it is a setup
-	// failure the caller can retry rather than a stream that yields nothing.
-	if err := s.readOpen(); err != nil {
+	// failure the caller can retry rather than a stream that yields nothing. It
+	// is bounded: the header timeout ended when the headers arrived.
+	stall := time.AfterFunc(c.openTimeout, func() { _ = resp.Body.Close() })
+	err = s.readOpen()
+	if !stall.Stop() {
+		return nil, nil, fmt.Errorf("bud: the stream sent no opening frame within %s", c.openTimeout)
+	}
+	if err != nil {
 		_ = resp.Body.Close()
 		return nil, nil, err
 	}
@@ -268,6 +280,7 @@ func (s *Stream) readOpen() error {
 		}
 	}
 	s.cursor = open.Cursor
+	s.delivered = open.Cursor
 	return nil
 }
 
@@ -294,6 +307,9 @@ const (
 // not news the caller has to act on.
 func (s *Stream) Next() (JournalEvent, bool) {
 	for len(s.pending) == 0 {
+		// Everything read so far has been handed out, so the latest cursor is
+		// safe to resume from. A batch that only moves the cursor commits here.
+		s.delivered = s.cursor
 		batch, ok := s.nextBatch()
 		if !ok {
 			return JournalEvent{}, false
@@ -302,6 +318,9 @@ func (s *Stream) Next() (JournalEvent, bool) {
 	}
 	ev := s.pending[0]
 	s.pending = s.pending[1:]
+	if len(s.pending) == 0 {
+		s.delivered = s.cursor
+	}
 	return ev, true
 }
 
@@ -370,7 +389,7 @@ func (s *Stream) nextBatch() (WaitOutput, bool) {
 // What a caller needs in order to reconnect. Pass it as [WaitInput.Cursor] on the
 // next Watch or Wait; the journal replays everything after it, including what
 // arrived while no stream was open.
-func (s *Stream) Cursor() string { return s.cursor }
+func (s *Stream) Cursor() string { return s.delivered }
 
 // Err is why the stream ended, or nil for a clean close.
 func (s *Stream) Err() error {

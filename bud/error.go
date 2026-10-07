@@ -127,7 +127,7 @@ type Error struct {
 	RetryAfterMs uint32 `json:"retry_after_ms,omitempty"`
 
 	// Current and Version are declared by the wire for a conflict that carries
-	// the object as stored. Nothing served sets them today; a conflict says only
+	// the object as stored. Nothing served sets them; a conflict says only
 	// to read again.
 	Current json.RawMessage `json:"current,omitempty"`
 	Version string          `json:"version,omitempty"`
@@ -255,7 +255,7 @@ func preflight(code, format string, args ...any) *Error {
 // errorFrom reads a refusal out of a response that is not the envelope.
 //
 // Used when the status says failure and the body does not decode into the
-// operation's own output — an ALB's HTML, a proxy's plain text. The status still
+// operation's own output — a load balancer's HTML, a proxy's plain text. The status still
 // carries information, so it is kept.
 func errorFrom(status int, body []byte, requestID string) *Error {
 	e := &Error{

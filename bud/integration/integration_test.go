@@ -219,6 +219,9 @@ func TestAWatchOpensAtACursor(t *testing.T) {
 	if st.RequestID() == "" {
 		t.Error("the stream carries no request id")
 	}
+	if st.Cursor() == "" {
+		t.Error("the stream opened without saying where it starts")
+	}
 }
 
 // TestRefusalsCarryWhatToDoNext covers the refusals a caller acts on, none of

@@ -317,3 +317,27 @@ func TestAPartsReadingListsWhatDescribePartTakes(t *testing.T) {
 		t.Errorf("a part answer decoded into a PartMap: %v", err)
 	}
 }
+
+// TestTheCatalogAnswersByNameOrPath: the catalog lists each operation by name
+// ("ListFolder") and by path ("folder.list"); a caller may ask by either.
+func TestTheCatalogAnswersByNameOrPath(t *testing.T) {
+	t.Parallel()
+
+	var cat bud.Catalog
+	if err := json.Unmarshal([]byte(`{"contract":"bud/v1","operations":[`+
+		`{"name":"ListFolder","path":"folder.list","served":true},`+
+		`{"name":"Send","path":"send","served":true},`+
+		`{"name":"DescribeHold","path":"hold.describe","served":false}]}`), &cat); err != nil {
+		t.Fatal(err)
+	}
+	for _, op := range []string{"ListFolder", "folder.list", "Send", "send"} {
+		if !cat.Served(op) {
+			t.Errorf("Served(%q) = false", op)
+		}
+	}
+	for _, op := range []string{"DescribeHold", "hold.describe", "nothing.at.all"} {
+		if cat.Served(op) {
+			t.Errorf("Served(%q) = true", op)
+		}
+	}
+}

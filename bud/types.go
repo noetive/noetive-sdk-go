@@ -63,8 +63,8 @@ type ReadOutput struct {
 	Cursor    string `json:"cursor,omitempty"`
 	Truncated bool   `json:"truncated,omitempty"`
 
-	// Version is declared by the wire and not sent today: no update takes a
-	// version to quote.
+	// Version is declared by the wire and not sent: no update takes a version
+	// to quote.
 	Version string `json:"version,omitempty"`
 
 	Error *Error `json:"error,omitempty"`
@@ -90,7 +90,7 @@ type Provenance struct {
 	// JoinVerified, or JoinClaimed for one that only claims to be a reply.
 	ThreadJoin string `json:"thread_join,omitempty"`
 
-	// Folder and Removed are declared by the wire and not sent today.
+	// Folder and Removed are declared by the wire and not sent.
 	Folder  string         `json:"folder,omitempty"`
 	Removed map[string]int `json:"removed,omitempty"`
 }
@@ -100,7 +100,7 @@ type PutInput struct {
 	Ref  string          `json:"ref"`
 	Body json.RawMessage `json:"body"`
 
-	// Version is declared by the wire; no write served today takes one, and
+	// Version is declared by the wire; no write takes one, and
 	// one sent is refused as invalid.
 	Version string `json:"version,omitempty"`
 
@@ -111,7 +111,7 @@ type PutInput struct {
 type PutOutput struct {
 	Ref string `json:"ref,omitempty"`
 
-	// Version is declared by the wire and not sent today.
+	// Version is declared by the wire and not sent.
 	Version string `json:"version,omitempty"`
 	Created bool   `json:"created,omitempty"`
 
@@ -150,8 +150,7 @@ type SendInput struct {
 	InReplyTo string `json:"in_reply_to,omitempty"`
 	ReplyAll  bool   `json:"reply_all,omitempty"`
 
-	// Attach is declared by the wire and refused today as invalid: attaching is
-	// not served yet.
+	// Attach is declared by the wire; a send that sets it is refused as invalid.
 	Attach []string `json:"attach,omitempty"`
 
 	// Agent is the machine-readable part, for an exchange between two agents:

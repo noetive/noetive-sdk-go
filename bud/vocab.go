@@ -14,7 +14,7 @@ const (
 	// StateQueued means the message is durably queued and not yet handed on.
 	StateQueued = "queued"
 
-	// StateSending means a worker is handing it on.
+	// StateSending means it is being handed on.
 	StateSending = "sending"
 
 	// StateSent means the provider accepted it.
@@ -29,8 +29,7 @@ const (
 	// StateFailed means it could not be handed on. Reason says why.
 	StateFailed = "failed"
 
-	// StateHeld and StateRejected appear only on messages from before holds
-	// were removed. Nothing is held now.
+	// StateHeld and StateRejected can appear on older messages. Nothing is held.
 	StateHeld     = "held"
 	StateRejected = "rejected"
 )
@@ -87,7 +86,7 @@ const (
 
 // The sending statuses, which SendingStatus.Status names.
 const (
-	// SendingReady means mail is handed to the transport on the next pass.
+	// SendingReady means mail goes out now.
 	SendingReady = "ready"
 
 	// SendingProvisioning means the sending domain is not ready yet. Mail is

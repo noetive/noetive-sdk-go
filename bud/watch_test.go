@@ -152,7 +152,7 @@ func TestWatchEndsOnARefusalInFlight(t *testing.T) {
 
 	srv := watchServer(t, func(s stream) {
 		s.open("41")
-		s.frame("batch", `{"cursor":"","error":{"code":"internal","message":"the journal could not be read"}}`)
+		s.frame("batch", `{"cursor":"","error":{"code":"internal","message":"the request could not be completed"}}`)
 		s.hold()
 	})
 
@@ -284,7 +284,7 @@ func TestWaitReturnsARefusalAsAValue(t *testing.T) {
 		srv := refusingServer(t, http.StatusBadRequest,
 			`{"error":{"code":"invalid","message":"the cursor does not parse","field":"/cursor"}}`)
 
-		out, err := mustClient(t, srv.URL).Wait(t.Context(), bud.WaitInput{Cursor: "v1.junk"})
+		out, err := mustClient(t, srv.URL).Wait(t.Context(), bud.WaitInput{Cursor: "not-a-cursor"})
 		if err != nil {
 			t.Fatalf("a refusal arrived as a Go error: %v", err)
 		}
@@ -294,7 +294,7 @@ func TestWaitReturnsARefusalAsAValue(t *testing.T) {
 		if out.Error.HTTPStatus != http.StatusBadRequest || out.Error.RequestID != "request_01refused" {
 			t.Errorf("status %d, request %q", out.Error.HTTPStatus, out.Error.RequestID)
 		}
-		if out.Cursor != "v1.junk" {
+		if out.Cursor != "not-a-cursor" {
 			t.Errorf("Cursor = %q, want the caller's own back", out.Cursor)
 		}
 	})
@@ -303,7 +303,7 @@ func TestWaitReturnsARefusalAsAValue(t *testing.T) {
 		t.Parallel()
 		srv := watchServer(t, func(s stream) {
 			s.open("41")
-			s.frame("batch", `{"cursor":"","error":{"code":"upstream_unavailable","message":"metering did not answer","request_id":"request_01frame"}}`)
+			s.frame("batch", `{"cursor":"","error":{"code":"upstream_unavailable","message":"a dependency did not answer","request_id":"request_01frame"}}`)
 			s.hold()
 		})
 
@@ -723,7 +723,7 @@ func TestAHandshakeIsRetriedOnlyWhenTheConnectionFailed(t *testing.T) {
 	t.Run("a refusal", func(t *testing.T) {
 		t.Parallel()
 		srv := refusingServer(t, http.StatusServiceUnavailable,
-			`{"error":{"code":"upstream_unavailable","message":"metering did not answer"}}`)
+			`{"error":{"code":"upstream_unavailable","message":"a dependency did not answer"}}`)
 		d := &flakyDoer{}
 
 		out, err := client(t, srv.URL, d).Wait(t.Context(), bud.WaitInput{})
@@ -734,4 +734,36 @@ func TestAHandshakeIsRetriedOnlyWhenTheConnectionFailed(t *testing.T) {
 			t.Errorf("%d attempts; a refusal is the caller's to retry, not this package's", n)
 		}
 	})
+}
+
+// TestTheCursorCoversOnlyWhatWasHandedOut: a consumer that stops part-way
+// through a batch and resumes from Cursor must get the rest of that batch
+// again, not skip it.
+func TestTheCursorCoversOnlyWhatWasHandedOut(t *testing.T) {
+	t.Parallel()
+
+	srv := watchServer(t, func(s stream) {
+		s.open("41")
+		s.frame("batch", twoEvents)
+		s.hold()
+	})
+
+	st, err := mustClient(t, srv.URL).Watch(t.Context(), bud.WaitInput{})
+	if err != nil {
+		t.Fatalf("Watch: %v", err)
+	}
+	defer func() { _ = st.Close() }()
+
+	if _, ok := st.Next(); !ok {
+		t.Fatalf("Next: %v", st.Err())
+	}
+	if st.Cursor() != "41" {
+		t.Errorf("Cursor = %q after one of two events; resuming there would skip the second", st.Cursor())
+	}
+	if _, ok := st.Next(); !ok {
+		t.Fatalf("Next: %v", st.Err())
+	}
+	if st.Cursor() != "43" {
+		t.Errorf("Cursor = %q after the whole batch, want 43", st.Cursor())
+	}
 }

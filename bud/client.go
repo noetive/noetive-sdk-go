@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 )
 
 // The client, and the one decision in it worth arguing about.
@@ -58,6 +59,10 @@ type Client struct {
 	baseURL string
 	retry   RetryPolicy
 
+	// openTimeout bounds the wait between a stream's headers and its opening
+	// frame, which the transport's header timeout does not cover.
+	openTimeout time.Duration
+
 	// authorization is the header value, precomputed. Empty on a forwarding
 	// client, which reads it from the context instead.
 	authorization string
@@ -101,6 +106,8 @@ func newClient(opts ...Option) *Client {
 		doer:    cfg.httpClient,
 		baseURL: strings.TrimRight(cfg.baseURL, "/"),
 		retry:   cfg.retry,
+
+		openTimeout: DefaultResponseTimeout,
 	}
 }
 
@@ -278,10 +285,11 @@ type CatalogKind struct {
 	Params   []string `json:"params,omitempty"`
 }
 
-// Served reports whether this deployment implements an operation.
+// Served reports whether this deployment implements an operation, named either
+// as the catalog names it ("ListFolder") or by its path ("folder.list").
 func (c Catalog) Served(name string) bool {
 	for _, op := range c.Operations {
-		if op.Name == name {
+		if op.Name == name || op.Path == name {
 			return op.Served
 		}
 	}
@@ -523,7 +531,7 @@ func decodeEnvelope(status int, raw []byte, requestID string, out any) error {
 	}
 	if err := json.Unmarshal(raw, out); err != nil {
 		// The status said something; the body did not say it in our shape. An
-		// ALB's HTML 502 arrives here, and so does a proxy's plain-text 413.
+		// load balancer's HTML 502 arrives here, and so does a proxy's plain-text 413.
 		return errorFrom(status, raw, requestID)
 	}
 

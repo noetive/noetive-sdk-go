@@ -108,7 +108,7 @@ func TestARefusalReadsAsAPlan(t *testing.T) {
 
 // TestATransportFailureIsAnError is the other half.
 //
-// A body that is not the envelope — an ALB's HTML, a proxy's plain text — is not a
+// A body that is not the envelope — a load balancer's HTML, a proxy's plain text — is not a
 // refusal the server authored, and presenting it as one would put words in the
 // server's mouth. The status is kept because it still carries information.
 func TestATransportFailureIsAnError(t *testing.T) {

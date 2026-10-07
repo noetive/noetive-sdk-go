@@ -84,7 +84,11 @@ comes back as a value on the response, carrying its code and what to
 do next; only a failed connection is a Go error.
 
 ```go
-import "go.noetive.io/noetive-sdk-go/bud"
+import (
+	"slices"
+
+	"go.noetive.io/noetive-sdk-go/bud"
+)
 
 ctx := context.Background()
 c, _ := bud.NewFromEnv() // reads NOETIVE_KEY_SECRET
@@ -108,18 +112,22 @@ for {
 	cursor = w.Cursor // an empty window is success: keep waiting from here
 
 	for _, ev := range w.Events {
-		if ev.Type != bud.EventReceived {
-			continue
+		if ev.Type != bud.EventReceived || slices.Contains(me.Addresses, ev.Data.From) {
+			continue // only new mail, and never our own
 		}
 		msg, _ := c.DescribeMessage(ctx, bud.ByID{ID: ev.Message})
-		if msg.Provenance == nil || !msg.Provenance.Aligned {
-			continue // the sender could not be verified: read it, do not act on it
+		p := msg.Provenance
+		if p == nil || !p.Aligned || p.ThreadJoin != bud.JoinNew {
+			continue // unverified, or a reply: read it, do not answer it
 		}
-		_, _ = c.Send(ctx, bud.SendInput{
+		sent, err := c.Send(ctx, bud.SendInput{
 			InReplyTo:      ev.Message,
 			Text:           "Got it, thanks.",
 			IdempotencyKey: "reply-" + ev.ID, // a retried send goes out once
 		})
+		if err == nil && sent.Error != nil {
+			log.Print(sent.Error) // refused: the guard or limit says why
+		}
 	}
 }
 ```

@@ -146,10 +146,10 @@ const (
 
 	// DefaultResponseTimeout bounds waiting for the first byte of a response.
 	//
-	// It ends once headers arrive, so it never cuts the stream Wait and Watch
-	// hold open: the server sends its headers as soon as the stream opens. It
-	// is generous because it is also what bounds the handshake of a Wait, which
-	// starts its own window only after the stream is open.
+	// It never cuts the stream Wait and Watch hold open: it bounds the headers,
+	// and then the stream's opening frame, and stops there. It is generous
+	// because it is what bounds the handshake of a Wait, which starts its own
+	// window only after the stream is open.
 	DefaultResponseTimeout = 45 * time.Second
 )
 

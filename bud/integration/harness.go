@@ -14,7 +14,8 @@
 // The suite reads, waits and refuses; it never delivers mail. Sending is
 // exercised only through requests the service refuses before anything is
 // queued, and the one write it makes, marking a message read or unread, sets
-// the message to the state it already has.
+// the message to the state it already has. That write still emits a mail.read
+// event, which anyone watching the mailbox sees.
 //
 // If NOETIVE_KEY_SECRET is unset every test calls t.Skip, so `go test ./...`
 // stays green without network access.
