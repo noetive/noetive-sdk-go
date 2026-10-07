@@ -39,9 +39,7 @@ SendInput
   attach []string,omitempty
   bcc []string,omitempty
   cc []string,omitempty
-  draft string,omitempty
   from string,omitempty
-  hold bool,omitempty
   html string,omitempty
   idempotency_key string,omitempty
   in_reply_to string,omitempty
@@ -53,7 +51,6 @@ SendInput
 SendOutput
   error object,omitempty
   message string,omitempty
-  message_id string,omitempty
   reason string,omitempty
   remaining map[string]number,omitempty
   state string,omitempty
@@ -103,8 +100,8 @@ EventData
   from string,omitempty
   guard string,omitempty
   in_tenant bool,omitempty
-  itip string,omitempty
   known bool,omitempty
+  message_id string,omitempty
   provider string,omitempty
   reason string,omitempty
   state string,omitempty
@@ -115,8 +112,6 @@ Actor
 Me
   addresses []string,omitempty
   agent string
-  book string,omitempty
-  calendars []string,omitempty
   granted []string,omitempty
   kind string,omitempty
   limits map[string]number,omitempty
@@ -124,6 +119,7 @@ Me
   name string,omitempty
   readable_mailboxes []string,omitempty
   scopes []string,omitempty
+  sending object,omitempty
   tenant string
 Listing
   folder string

@@ -32,10 +32,14 @@ const DefaultBaseURL = "https://bud.noetive.io"
 // Environment variables. Exactly two, and resisting a third is the point: a knob
 // that arrives through ambient environment is one a caller did not choose and
 // cannot see. Everything else is an Option.
+//
+// The key is the same variable every Noetive SDK reads, because one key reaches
+// every product. The base URL is not: each product has its own endpoint, so each
+// has its own variable.
 const (
 	// EnvToken is the agent's Noetive developer key. Bud mints no credential of
 	// its own; this is the key the control plane sealed for the agent.
-	EnvToken = "NOETIVE_BUD_KEY_SECRET"
+	EnvToken = "NOETIVE_KEY_SECRET"
 
 	// EnvBaseURL points the client somewhere other than production.
 	EnvBaseURL = "NOETIVE_BUD_BASE_URL"
@@ -64,8 +68,11 @@ func WithBaseURL(url string) Option {
 // WithHTTPClient replaces the transport.
 //
 // Do not pass a client with Timeout set. See the note at the top of this file:
-// it would cut the long poll and the stream, which are the two calls whose whole
-// purpose is to stay open.
+// it would cut Wait's window and the stream, which are the two calls whose whole
+// purpose is to stay open. Bound the wait for response headers instead, as the
+// default transport does with [DefaultResponseTimeout]: without it, a server that
+// accepts the connection and never answers holds a Wait handshake for as long as
+// the caller's context allows.
 func WithHTTPClient(d Doer) Option {
 	return func(c *config) { c.httpClient = d }
 }
@@ -93,7 +100,7 @@ func NewFromEnv(opts ...Option) (*Client, error) {
 	}
 	if isUnexpandedPlaceholder(token) {
 		// An editor launched from a desktop icon often never reads a shell
-		// profile, so "${NOETIVE_BUD_KEY_SECRET}" arrives literally. Sending it
+		// profile, so "${NOETIVE_KEY_SECRET}" arrives literally. Sending it
 		// would get back "unauthorized" and send somebody to check an account
 		// that is fine.
 		return nil, preflight(CodeInvalid,
@@ -149,17 +156,19 @@ const (
 
 	// DefaultResponseTimeout bounds waiting for the first byte of a response.
 	//
-	// Comfortably past MaxWaitSeconds, because a poll that returns nothing after
-	// the full twenty-five seconds is a successful call and must not be read as a
-	// server that stopped answering.
+	// It ends once headers arrive, so it never cuts the stream Wait and Watch
+	// hold open: the server sends its headers as soon as the stream opens. It
+	// is generous because it is also what bounds the handshake of a Wait, which
+	// starts its own window only after the stream is open.
 	DefaultResponseTimeout = 45 * time.Second
 )
 
-// MaxWaitSeconds is the longest the server will hold a poll open.
+// MaxWaitSeconds is the longest window Wait holds the stream open, and the
+// longest quiet interval the server allows before a keepalive.
 //
-// A caller whose own deadline is shorter than this will see its normal empty
-// answer as a cancelled request — which is the reading that makes an agent retry
-// immediately, against the description that told it not to.
+// A caller whose own deadline is shorter than its window will see its normal
+// empty answer as a cancelled request — which is the reading that makes an agent
+// retry immediately, against the description that told it not to.
 const MaxWaitSeconds = 25
 
 func defaultHTTPClient() *http.Client {

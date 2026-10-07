@@ -7,7 +7,8 @@
 // tolerates comment lines (leading ':'), and terminates a frame on an
 // empty line. Unknown directives and empty frames are silently ignored.
 //
-// Per-frame size is capped at [MaxFrameBytes]; larger frames produce
+// Per-frame size is capped, at [MaxFrameBytes] unless the caller chose a
+// bound with [NewScannerLimit]; larger frames produce
 // [ErrFrameTooLarge]. This bound protects SDK callers against
 // unbounded memory growth on a misbehaving server or proxy.
 package sse
@@ -20,9 +21,11 @@ import (
 	"strings"
 )
 
-// MaxFrameBytes is the largest single SSE frame (event + data lines)
-// the scanner will accumulate before returning ErrFrameTooLarge.
-// 64 KiB is an order of magnitude larger than any Semantik event.
+// MaxFrameBytes is the largest single SSE frame (event + data lines) a
+// [NewScanner] will accumulate before returning ErrFrameTooLarge.
+// 64 KiB is an order of magnitude larger than any Semantik event; a
+// stream whose frames batch many events sets its own bound with
+// [NewScannerLimit].
 const MaxFrameBytes = 64 * 1024
 
 // initialBufSize is the starting line-buffer size handed to
@@ -32,7 +35,7 @@ const MaxFrameBytes = 64 * 1024
 const initialBufSize = 4 * 1024
 
 // ErrFrameTooLarge is returned by [Scanner.Scan] when a frame's
-// accumulated event + data bytes exceed [MaxFrameBytes].
+// accumulated event + data bytes exceed the scanner's bound.
 var ErrFrameTooLarge = errors.New("sse: frame exceeds maximum size")
 
 // Frame is one complete SSE event as delivered to [Scanner.Frame].
@@ -56,15 +59,25 @@ type Scanner struct {
 	cur  Frame
 	err  error
 	size int
+	max  int
 }
 
-// NewScanner returns a Scanner that reads from r. The caller is
-// responsible for closing r (usually the HTTP response body).
-func NewScanner(r io.Reader) *Scanner {
+// NewScanner returns a Scanner that reads from r with frames bounded by
+// [MaxFrameBytes]. The caller is responsible for closing r (usually the
+// HTTP response body).
+func NewScanner(r io.Reader) *Scanner { return NewScannerLimit(r, MaxFrameBytes) }
+
+// NewScannerLimit returns a Scanner whose frames are bounded by
+// maxFrame bytes. The buffer grows only as frames need it, so a large
+// bound costs memory only when a frame that large arrives.
+func NewScannerLimit(r io.Reader, maxFrame int) *Scanner {
+	if maxFrame < initialBufSize {
+		panic("sse: a frame bound below the initial buffer size cannot hold a line")
+	}
 	sc := bufio.NewScanner(r)
-	sc.Buffer(make([]byte, initialBufSize), MaxFrameBytes)
+	sc.Buffer(make([]byte, initialBufSize), maxFrame)
 	sc.Split(splitSSELines)
-	return &Scanner{sc: sc}
+	return &Scanner{sc: sc, max: maxFrame}
 }
 
 // Scan reads the next frame. It returns true on success and false on
@@ -93,7 +106,7 @@ func (s *Scanner) Scan() bool {
 			continue
 		}
 		s.size += len(line)
-		if s.size > MaxFrameBytes {
+		if s.size > s.max {
 			s.err = ErrFrameTooLarge
 			return false
 		}

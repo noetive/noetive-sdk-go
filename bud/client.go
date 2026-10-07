@@ -17,8 +17,7 @@ import (
 // populated Error inside a well-formed envelope, at a status derived from the
 // code. This package returns that with a nil error, because the envelope is what
 // the caller acts on — the code to branch on, the hint that says what would
-// unblock it, and on a conflict the object as it now stands plus the version to
-// quote. Wrapping it as a Go error would put every caller in the position of
+// unblock it, the limit that fired and when it clears. Wrapping it as a Go error would put every caller in the position of
 // rebuilding a value it was already handed.
 //
 // A non-nil error means something that is not about the request: a connection
@@ -36,6 +35,10 @@ import (
 // as *semantik.Error. The divergence is deliberate: that service's envelope is
 // four flat fields, and bud's carries the things a caller needs in order to
 // recover. Flattening it to match would delete them.
+//
+// [Client.Watch] is the exception. A stream has no envelope to carry a refusal,
+// so Watch returns the server's refusal as an *Error, and [Stream.Err] does the
+// same for one sent in flight; use errors.As and branch on its Code.
 
 // maxResponseBytes bounds a reply.
 //
@@ -116,18 +119,35 @@ func (c *Client) GoString() string { return c.String() }
 // One field, because the identifier's prefix says which kind it is. A caller that
 // pasted a thread identifier where a message one belonged is refused by the
 // server's parser rather than by a handler that guessed.
+//
+// Shared by the describe operations, and each takes only its own fields: a field
+// another operation reads — MaxChars on DescribeThread, Mode on DescribeMessage —
+// is refused as invalid. Part is the exception, and is ignored outside
+// DescribePart.
 type ByID struct {
 	ID string `json:"id"`
 
-	// MaxChars bounds the rendering. Omit for the server's default.
+	// MaxChars bounds DescribeMessage's rendering: at most, and by default,
+	// 20000. A longer one comes back Truncated with a Cursor to continue from.
+	// Ignored with RenderRaw.
 	MaxChars int `json:"max_chars,omitempty"`
 
-	// Quoted expands the earlier messages a reply folded away.
-	Quoted bool `json:"quoted,omitempty"`
-
+	// Render is how DescribeMessage renders: RenderText, RenderRaw or RenderParts.
 	Render string `json:"render,omitempty"`
-	Format string `json:"format,omitempty"`
+
+	// Cursor continues a truncated rendering.
 	Cursor string `json:"cursor,omitempty"`
+
+	// Part names one part of a message, by the number a RenderParts reading
+	// lists it under. Only DescribePart reads it; the other reads ignore it.
+	Part string `json:"part,omitempty"`
+
+	// Mode is how DescribePart returns the part: PartModeText or PartModeBytes.
+	Mode string `json:"mode,omitempty"`
+
+	// MaxMessages is how many of a thread's most recent messages DescribeThread
+	// renders: 20 by default, at most 50.
+	MaxMessages int `json:"max_messages,omitempty"`
 }
 
 // In names a collection by the identifier of whatever holds it, with the filters
@@ -136,52 +156,54 @@ type ByID struct {
 // Typed fields rather than a string to assemble: a schema a caller can see is the
 // difference between a filter that works and one that is silently ignored.
 type In struct {
-	In     string `json:"in"`
-	Folder string `json:"folder,omitempty"`
-	Month  string `json:"month,omitempty"`
+	// In is the mailbox, by its agent's identifier.
+	In string `json:"in"`
 
-	Unread bool   `json:"unread,omitempty"`
+	// Folder is FolderInbox, the default, FolderSent or FolderQuarantine.
+	Folder string `json:"folder,omitempty"`
+
+	// Unread and Agent narrow to unread messages and to messages carrying a
+	// machine-readable part. False is no filter.
+	Unread bool `json:"unread,omitempty"`
+	Agent  bool `json:"agent,omitempty"`
+
+	// Since and Before bound the message date, RFC 3339; Since is inclusive.
+	// Anything else is refused rather than read as a different window.
 	Since  string `json:"since,omitempty"`
 	Before string `json:"before,omitempty"`
+
 	From   string `json:"from,omitempty"`
 	Thread string `json:"thread,omitempty"`
-	Agent  bool   `json:"agent,omitempty"`
-	Q      string `json:"q,omitempty"`
-	Limit  int    `json:"limit,omitempty"`
+
+	// Q narrows correspondents to addresses containing it, ignoring case.
+	Q string `json:"q,omitempty"`
+
+	// Limit is how many entries to examine for this page, not how many match:
+	// 50 by default, at most 200. With a filter a page can come back short or
+	// empty and still carry a Cursor; keep paging until there is none.
+	Limit int `json:"limit,omitempty"`
+
+	// Cursor resumes a listing. Pass back unchanged the one the previous page
+	// of the same operation returned.
 	Cursor string `json:"cursor,omitempty"`
 }
 
 // Change writes to an existing object.
+//
+// There is no version to quote: an update is not compare-and-swap, and the last
+// write wins. Labels replace the message's labels whole. A body that carries a
+// version anyway is refused as invalid, at /version, which is why Change has no
+// field for one.
 type Change struct {
-	ID      string          `json:"id"`
+	ID string `json:"id"`
+
+	// Changes is {"read": bool, "labels": [string]}, at least one. Labels
+	// replace the message's labels whole, so an empty list removes them all.
 	Changes json.RawMessage `json:"changes"`
 
-	// Version is required to change something that exists. A conflict comes back
-	// carrying the current object and the version to quote, so the retry is a
-	// merge rather than another read.
-	Version string `json:"version,omitempty"`
-
+	// IdempotencyKey is remembered on a best-effort basis for up to an hour.
+	// Reusing one for a different change is refused as invalid.
 	IdempotencyKey string `json:"idempotency_key,omitempty"`
-}
-
-// Create makes a new object inside a collection.
-type Create struct {
-	// In is the collection that will hold it: a calendar identifier makes an
-	// event, a book identifier a contact. Empty where the collection is implied,
-	// as it is for a draft or a blob.
-	In   string          `json:"in,omitempty"`
-	Body json.RawMessage `json:"body"`
-
-	IdempotencyKey string `json:"idempotency_key,omitempty"`
-}
-
-// Remove deletes or cancels an object.
-//
-// Named for the caller's intent. What it does depends on the kind: a draft is
-// discarded, an event is cancelled and its attendees are told.
-type Remove struct {
-	ID      string `json:"id"`
-	Version string `json:"version,omitempty"`
 }
 
 // DescribeMe returns who this caller is and what it can reach.
@@ -193,7 +215,7 @@ func (c *Client) DescribeMe(ctx context.Context) (ReadOutput, error) {
 	return out, c.call(ctx, "me.describe", struct{}{}, &out)
 }
 
-// Health reports whether this credential is accepted and the node is ready.
+// Health reports whether this credential is accepted, and as which agent.
 //
 // Smaller than DescribeMe on purpose. It answers the one question a probe asks,
 // and the unauthenticated /health cannot answer it at all.
@@ -207,6 +229,11 @@ type Health struct {
 	Contract string `json:"contract"`
 	Agent    string `json:"agent"`
 	Tenant   string `json:"tenant"`
+
+	// Error is a refusal: a key that reaches no agent here is forbidden_scope, an
+	// account that cannot be charged is not_billable. Either way the key itself
+	// works; only unauthorized means it does not.
+	Error *Error `json:"error,omitempty"`
 }
 
 // DescribeCatalog returns the operations this deployment serves and the reference
@@ -224,6 +251,8 @@ type Catalog struct {
 	Contract   string             `json:"contract"`
 	Operations []CatalogOperation `json:"operations"`
 	Kinds      []CatalogKind      `json:"kinds"`
+
+	Error *Error `json:"error,omitempty"`
 }
 
 // CatalogOperation is one operation, as a client discovers it.
@@ -259,14 +288,16 @@ func (c Catalog) Served(name string) bool {
 	return false
 }
 
-// ListFolder returns a folder's messages.
+// ListFolder returns a folder's messages, oldest first, in the order they were
+// filed. A message that arrives mid-listing appears on a later page rather than
+// shuffling one already read.
 //
 // The summaries carry subject, sender, provenance and unread, which is what makes
 // triage one call rather than one call per message.
 func (c *Client) ListFolder(ctx context.Context, in In) (ReadOutput, error) {
 	var out ReadOutput
-	if in.In == "" {
-		return out, preflight(CodeInvalid, "ListFolder needs a mailbox in In")
+	if err := requireID(in.In, PrefixAgent, "ListFolder"); err != nil {
+		return out, err
 	}
 	return out, c.call(ctx, "folder.list", in, &out)
 }
@@ -280,7 +311,10 @@ func (c *Client) DescribeMessage(ctx context.Context, in ByID) (ReadOutput, erro
 	return out, c.call(ctx, "message.describe", in, &out)
 }
 
-// DescribeThread returns a conversation in order.
+// DescribeThread returns a conversation's most recent messages, in the order
+// they were sent. Each is cut at 4000 characters; read one with
+// DescribeMessage for the whole of it. Truncated means older messages were left
+// out, not that one was cut.
 func (c *Client) DescribeThread(ctx context.Context, in ByID) (ReadOutput, error) {
 	var out ReadOutput
 	if err := requireID(in.ID, PrefixThread, "DescribeThread"); err != nil {
@@ -289,7 +323,61 @@ func (c *Client) DescribeThread(ctx context.Context, in ByID) (ReadOutput, error
 	return out, c.call(ctx, "thread.describe", in, &out)
 }
 
-// UpdateMessage marks a message read, labels it, or moves it between folders.
+// DescribePart returns one part of a message: an attachment, or a body
+// alternative.
+//
+// PartModeText, the default, renders a part that is already text into Text,
+// under the same banner as a message body; any other type is refused as
+// unavailable in that mode. At most the first 2 MiB is read, and a longer part
+// comes back Truncated with no cursor to continue from.
+//
+// PartModeBytes puts the whole content in [PartView.Bytes]. A part too large to
+// return whole is refused as policy_refused, guard "part_size", rather than cut.
+// A message withheld for malware refuses every part, guard "virus".
+//
+// Read either through [ReadOutput.Into] with a *PartView.
+func (c *Client) DescribePart(ctx context.Context, in ByID) (ReadOutput, error) {
+	var out ReadOutput
+	if err := requireID(in.ID, PrefixMessage, "DescribePart"); err != nil {
+		return out, err
+	}
+	if in.Part == "" {
+		return out, preflight(CodeInvalid, "DescribePart needs a Part")
+	}
+	return out, c.call(ctx, "part.describe", in, &out)
+}
+
+// DescribeMailbox returns a mailbox's own state: what is waiting in each folder,
+// whether it may send, and what is left of its limits.
+//
+// The identifier is the agent's, since an agent and its mailbox are one. Read
+// the answer through [ReadOutput.Into] with a *MailboxView.
+func (c *Client) DescribeMailbox(ctx context.Context, in ByID) (ReadOutput, error) {
+	var out ReadOutput
+	if err := requireID(in.ID, PrefixAgent, "DescribeMailbox"); err != nil {
+		return out, err
+	}
+	return out, c.call(ctx, "mailbox.describe", in, &out)
+}
+
+// ListCorrespondents returns who a mailbox has exchanged mail with.
+//
+// Q, Limit and Cursor are the filters it accepts; the server ignores Folder and
+// refuses the rest. Read the answer through
+// [ReadOutput.Into] with a *Correspondents.
+func (c *Client) ListCorrespondents(ctx context.Context, in In) (ReadOutput, error) {
+	var out ReadOutput
+	if err := requireID(in.In, PrefixAgent, "ListCorrespondents"); err != nil {
+		return out, err
+	}
+	return out, c.call(ctx, "correspondent.list", in, &out)
+}
+
+// UpdateMessage marks a message read or unread, or replaces its labels.
+//
+// A CodePreconditionFailed means other label writes kept landing first. A read
+// change in the same request may already have applied; the request is safe to
+// repeat as it was.
 func (c *Client) UpdateMessage(ctx context.Context, in Change) (PutOutput, error) {
 	var out PutOutput
 	if err := requireChange(in, PrefixMessage, "UpdateMessage"); err != nil {
@@ -298,100 +386,22 @@ func (c *Client) UpdateMessage(ctx context.Context, in Change) (PutOutput, error
 	return out, c.call(ctx, "message.update", in, &out)
 }
 
-// UpdateThread sets a conversation's state, owner or labels.
-func (c *Client) UpdateThread(ctx context.Context, in Change) (PutOutput, error) {
-	var out PutOutput
-	if err := requireChange(in, PrefixThread, "UpdateThread"); err != nil {
-		return out, err
-	}
-	return out, c.call(ctx, "thread.update", in, &out)
-}
-
-// CreateDraft stores a message without sending it.
-func (c *Client) CreateDraft(ctx context.Context, in Create) (PutOutput, error) {
-	var out PutOutput
-	if len(in.Body) == 0 {
-		return out, preflight(CodeInvalid, "CreateDraft needs a Body")
-	}
-	return out, c.call(ctx, "draft.create", in, &out)
-}
-
-// UpdateDraft changes a stored draft.
-func (c *Client) UpdateDraft(ctx context.Context, in Change) (PutOutput, error) {
-	var out PutOutput
-	if err := requireChange(in, PrefixDraft, "UpdateDraft"); err != nil {
-		return out, err
-	}
-	return out, c.call(ctx, "draft.update", in, &out)
-}
-
-// DeleteDraft discards a draft.
-func (c *Client) DeleteDraft(ctx context.Context, in Remove) (PutOutput, error) {
-	var out PutOutput
-	if err := requireID(in.ID, PrefixDraft, "DeleteDraft"); err != nil {
-		return out, err
-	}
-	return out, c.call(ctx, "draft.delete", in, &out)
-}
-
-// DescribeDraft returns a stored draft.
-func (c *Client) DescribeDraft(ctx context.Context, in ByID) (ReadOutput, error) {
-	var out ReadOutput
-	if err := requireID(in.ID, PrefixDraft, "DescribeDraft"); err != nil {
-		return out, err
-	}
-	return out, c.call(ctx, "draft.describe", in, &out)
-}
-
-// DescribeHold returns a message waiting for a person to approve it.
-func (c *Client) DescribeHold(ctx context.Context, in ByID) (ReadOutput, error) {
-	var out ReadOutput
-	if err := requireID(in.ID, PrefixMessage, "DescribeHold"); err != nil {
-		return out, err
-	}
-	return out, c.call(ctx, "hold.describe", in, &out)
-}
-
-// UpdateHold approves or rejects a held message.
-func (c *Client) UpdateHold(ctx context.Context, in Change) (PutOutput, error) {
-	var out PutOutput
-	if err := requireChange(in, PrefixMessage, "UpdateHold"); err != nil {
-		return out, err
-	}
-	return out, c.call(ctx, "hold.update", in, &out)
-}
-
 // Send composes and sends a message.
 //
-// Read State on the way out: "held" means a person has to approve it, and sending
-// again sends a second copy. Pass an IdempotencyKey if the call may be retried —
-// this package will not retry a send without one, because it cannot invent a key
-// that survives a restart.
+// The server either queues the message or refuses it, naming the guard; nothing
+// waits for approval.
+//
+// Pass an IdempotencyKey on every send: without one, a timeout retried is a second
+// message, and this package will not retry a send without one, because it cannot
+// invent a key that survives a restart. A repeat with the same key returns the
+// first send's result for seven days and sends nothing; one that arrives while
+// the first is still running is refused as rate_limited with a wait.
 func (c *Client) Send(ctx context.Context, in SendInput) (SendOutput, error) {
 	var out SendOutput
-	if len(in.To) == 0 && in.Draft == "" {
-		return out, preflight(CodeInvalid, "Send needs To, or a Draft to send")
+	if len(in.To)+len(in.CC)+len(in.BCC) == 0 && in.InReplyTo == "" {
+		return out, preflight(CodeInvalid, "Send needs a recipient in To, CC or BCC, or InReplyTo for a reply")
 	}
 	return out, c.call(ctx, "send", in, &out)
-}
-
-// Search finds messages across every mailbox this caller can read.
-func (c *Client) Search(ctx context.Context, in In) (ReadOutput, error) {
-	var out ReadOutput
-	if in.Q == "" {
-		return out, preflight(CodeInvalid, "Search needs a query in Q")
-	}
-	return out, c.call(ctx, "search", in, &out)
-}
-
-// Wait blocks until something happens, or until the timeout.
-//
-// An empty result is success: see [WaitOutput.Empty]. For a long-lived consumer
-// prefer [Client.Watch], which holds one connection instead of paying a round trip
-// per quiet interval.
-func (c *Client) Wait(ctx context.Context, in WaitInput) (WaitOutput, error) {
-	var out WaitOutput
-	return out, c.call(ctx, "watch", in, &out)
 }
 
 // --- Plumbing --------------------------------------------------------------
@@ -534,8 +544,10 @@ func decodeEnvelope(status int, raw []byte, requestID string, out any) error {
 
 // envelopeError reaches the Error inside whichever output this was.
 //
-// A type switch over the four, rather than reflection: the set is closed, and a
-// switch is the spelling a reader can check.
+// A type switch over the five, rather than reflection: the set is closed, and a
+// switch is the spelling a reader can check. An output missing from it decodes a
+// refusal and then reports the status as malformed, so a new output type belongs
+// here the day it is added.
 func envelopeError(out any) *Error {
 	switch v := out.(type) {
 	case *ReadOutput:
@@ -544,7 +556,9 @@ func envelopeError(out any) *Error {
 		return v.Error
 	case *SendOutput:
 		return v.Error
-	case *WaitOutput:
+	case *Health:
+		return v.Error
+	case *Catalog:
 		return v.Error
 	default:
 		return nil

@@ -1,7 +1,6 @@
 package bud_test
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -22,24 +21,23 @@ import (
 // The server answers a rejected request with the operation's own output, at a
 // status derived from the code. Returning that as a Go error would make every
 // caller rebuild the envelope in order to read the things it needs — the code, the
-// hint, the version to retry with — out of a value it was already handed.
+// hint, whether to retry — out of a value it was already handed.
 func TestARefusalIsAValueNotAnError(t *testing.T) {
 	t.Parallel()
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("X-Request-Id", "request_01abc")
 		w.WriteHeader(http.StatusConflict)
-		_, _ = w.Write([]byte(`{"ref":"thread_01x","error":{` +
-			`"code":"precondition_failed","message":"version does not match",` +
-			`"version":"\"v2\"","current":{"state":"open"},` +
-			`"hint":"merge and quote the new version"}}`))
+		_, _ = w.Write([]byte(`{"ref":"message_01x","error":{` +
+			`"code":"precondition_failed","message":"other writes to this object kept landing first",` +
+			`"hint":"read it and try again"}}`))
 	}))
 	defer srv.Close()
 
 	c := mustClient(t, srv.URL)
 
-	out, err := c.UpdateThread(t.Context(), bud.Change{
-		ID: "thread_01x", Version: `"v1"`, Changes: json.RawMessage(`{"state":"closed"}`),
+	out, err := c.UpdateMessage(t.Context(), bud.Change{
+		ID: "message_01x", Changes: json.RawMessage(`{"labels":["urgent"]}`),
 	})
 	if err != nil {
 		t.Fatalf("a refusal arrived as a Go error, so the caller gets no envelope: %v", err)
@@ -60,16 +58,8 @@ func TestARefusalIsAValueNotAnError(t *testing.T) {
 		t.Errorf("RequestID = %q, want the header's", out.Error.RequestID)
 	}
 
-	// The point of Current: the retry is a merge, not a second read.
-	var current struct{ State string }
-	if err := out.Error.Into(&current); err != nil {
-		t.Fatalf("Into: %v", err)
-	}
-	if current.State != "open" {
-		t.Errorf("the conflict carried state %q", current.State)
-	}
-	if out.Error.Version != `"v2"` {
-		t.Errorf("Version = %q, want the one to retry with", out.Error.Version)
+	if out.Error.Hint != "read it and try again" || !out.Error.Retryable() {
+		t.Errorf("the refusal lost what to do next: hint %q, retryable %v", out.Error.Hint, out.Error.Retryable())
 	}
 
 	// errors.Is works on the sentinel, so a caller can branch without a switch on
@@ -174,11 +164,29 @@ func TestPreflightRefusesBeforeSending(t *testing.T) {
 
 	// A send with nothing to send.
 	if _, err := c.Send(t.Context(), bud.SendInput{}); err == nil {
-		t.Error("a send with no recipients and no draft was accepted")
+		t.Error("a send with no recipients and nothing to reply to was accepted")
 	}
 	// A change with no changes.
-	if _, err := c.UpdateThread(t.Context(), bud.Change{ID: "thread_01x"}); err == nil {
+	if _, err := c.UpdateMessage(t.Context(), bud.Change{ID: "message_01x"}); err == nil {
 		t.Error("an update with no Changes was accepted")
+	}
+	// A part read that names no part, and one aimed at a thread.
+	if _, err := c.DescribePart(t.Context(), bud.ByID{ID: "message_01x"}); err == nil {
+		t.Error("a part read with no Part was accepted")
+	}
+	if _, err := c.DescribePart(t.Context(), bud.ByID{ID: "thread_01x", Part: "2"}); err == nil {
+		t.Error("a thread id was accepted for DescribePart")
+	}
+	// A mailbox is named by its agent, not by a message.
+	if _, err := c.DescribeMailbox(t.Context(), bud.ByID{ID: "message_01x"}); err == nil {
+		t.Error("a message id was accepted for DescribeMailbox")
+	}
+	if _, err := c.ListCorrespondents(t.Context(), bud.In{}); err == nil {
+		t.Error("a correspondent listing with no mailbox was accepted")
+	}
+	// A listing names its mailbox by the agent; a thread id there is a mistake.
+	if _, err := c.ListFolder(t.Context(), bud.In{In: "thread_01x"}); err == nil {
+		t.Error("a thread id was accepted as a mailbox")
 	}
 
 	if n := reached.Load(); n != 0 {
@@ -289,34 +297,6 @@ func TestAForwardingClientHoldsNoCredential(t *testing.T) {
 	}
 }
 
-// TestAnEmptyPollIsSuccess pins the reading that stops a retry loop.
-//
-// Nothing happened within the timeout. A caller that treats this as failure and
-// calls straight back spends the budget it was told to wait with, and the next poll
-// is identical.
-func TestAnEmptyPollIsSuccess(t *testing.T) {
-	t.Parallel()
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write([]byte(`{"cursor":"41"}`))
-	}))
-	defer srv.Close()
-
-	out, err := mustClient(t, srv.URL).Wait(t.Context(), bud.WaitInput{TimeoutSeconds: 1})
-	if err != nil {
-		t.Fatalf("Wait: %v", err)
-	}
-	if out.Error != nil {
-		t.Fatalf("an empty poll carried a refusal: %v", out.Error)
-	}
-	if !out.Empty() {
-		t.Error("Empty() is false for a poll that returned nothing")
-	}
-	if out.Cursor != "41" {
-		t.Errorf("Cursor = %q; the position must survive an empty poll", out.Cursor)
-	}
-}
-
 // TestARedirectIsRefused stops a 3xx relocating the credential.
 //
 // Following one would re-attach the Authorization header to whatever Location
@@ -343,38 +323,6 @@ func TestARedirectIsRefused(t *testing.T) {
 	}
 	if n := elsewhere.Load(); n != 0 {
 		t.Errorf("the credential reached another host %d times", n)
-	}
-}
-
-// TestTheClientSendsNoTimeoutOfItsOwn protects the long poll and the stream.
-//
-// http.Client.Timeout bounds the whole exchange including the body, so a client
-// carrying one would sever a twenty-five second poll and any stream. The response
-// header timeout is the right knob and it is well past the poll.
-func TestTheClientSendsNoTimeoutOfItsOwn(t *testing.T) {
-	t.Parallel()
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		// Answer the headers at once, then hold the body open past anything a
-		// whole-exchange timeout would allow.
-		w.WriteHeader(http.StatusOK)
-		if f, ok := w.(http.Flusher); ok {
-			f.Flush()
-		}
-		time.Sleep(300 * time.Millisecond)
-		_, _ = w.Write([]byte(`{"cursor":"1"}`))
-	}))
-	defer srv.Close()
-
-	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
-	defer cancel()
-
-	out, err := mustClient(t, srv.URL).Wait(ctx, bud.WaitInput{TimeoutSeconds: 1})
-	if err != nil {
-		t.Fatalf("a slow body was cut short: %v", err)
-	}
-	if out.Cursor != "1" {
-		t.Errorf("Cursor = %q", out.Cursor)
 	}
 }
 

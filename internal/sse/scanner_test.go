@@ -137,3 +137,26 @@ func TestScanner_NoTrailingNewlineAtEOF(t *testing.T) {
 		t.Errorf("Event = %q", s.Frame().Event)
 	}
 }
+
+// TestScanner_LimitIsTheCallers: a stream that batches many events needs a
+// bound above the default, and the bound it chose is the one enforced — both
+// for a frame on one long line and for one spread over many data lines.
+func TestScanner_LimitIsTheCallers(t *testing.T) {
+	const limit = 4 * MaxFrameBytes
+	for name, frame := range map[string]func(n int) string{
+		"one line": func(n int) string { return "event: batch\ndata: " + strings.Repeat("x", n) + "\n\n" },
+		"many lines": func(n int) string {
+			return "event: batch\n" + strings.Repeat("data: "+strings.Repeat("x", 1000)+"\n", n/1000) + "\n"
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if s := NewScannerLimit(strings.NewReader(frame(2*MaxFrameBytes)), limit); !s.Scan() {
+				t.Errorf("a frame under the caller's bound was refused: %v", s.Err())
+			}
+			s := NewScannerLimit(strings.NewReader(frame(limit+1000)), limit)
+			if s.Scan() || !errors.Is(s.Err(), ErrFrameTooLarge) {
+				t.Errorf("a frame over the caller's bound was not refused: %v", s.Err())
+			}
+		})
+	}
+}

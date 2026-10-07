@@ -8,9 +8,10 @@ import (
 
 // Retries, and why there are almost none.
 //
-// A write changes the world. `send` and the update operations are safe to re-issue
-// only with an idempotency key the caller chose, and this package cannot invent
-// one: a key it generated would differ across a process restart, so a genuine
+// A write changes the world. `send` is safe to re-issue only with an idempotency
+// key the caller chose. `message.update` is safe to repeat as it was, but a
+// repeat can overwrite labels another agent wrote in between, so it goes through
+// the same gate rather than a second rule. This package cannot invent a key: a key it generated would differ across a process restart, so a genuine
 // retry would send a second copy while two distinct calls would be collapsed into
 // one. Both failures are worse than the error the caller would have seen.
 //
@@ -18,7 +19,7 @@ import (
 //
 //   - A refusal is never retried. It is an answer, not a failure — and the
 //     envelope already says what to do instead.
-//   - A poll that returned nothing is never retried. It is a successful call.
+//   - A Wait whose window closed empty is never retried. It is a successful call.
 //   - A request that does not write is retried once on a connection that failed
 //     before any response byte arrived.
 //   - A request that writes is retried only when it carried an idempotency key.
@@ -97,8 +98,8 @@ func (p TransientRetry) Wait(ctx context.Context, attempt int) error {
 func writes(op string) bool {
 	switch op {
 	case "me.describe", "health", "catalog.describe",
-		"folder.list", "message.describe", "thread.describe",
-		"hold.describe", "draft.describe", "search", "watch":
+		"folder.list", "message.describe", "thread.describe", "part.describe",
+		"mailbox.describe", "correspondent.list", "help.describe", "watch":
 		return false
 	default:
 		return true
@@ -115,8 +116,6 @@ func idempotencyKeyOf(in any) string {
 	case SendInput:
 		return v.IdempotencyKey
 	case Change:
-		return v.IdempotencyKey
-	case Create:
 		return v.IdempotencyKey
 	default:
 		return ""

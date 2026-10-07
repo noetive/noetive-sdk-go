@@ -13,9 +13,9 @@ import (
 //
 // A refusal is read once, by whoever is about to decide what to do next. It is
 // not re-sent on every turn the way a tool manifest is, so the budget that
-// governs a description does not govern this: carrying the limit that fired, the
-// version to retry with and the object as it now stands is nearly free, and it is
-// the difference between a plan and a retry loop.
+// governs a description does not govern this: carrying the limit that fired, when it
+// clears, the guard that refused and the field that was wrong is nearly free, and
+// it is the difference between a plan and a retry loop.
 //
 // "rate_limited" on its own leaves a caller to guess. "rate_limited, per_hour,
 // retry in 41 minutes, 0 of 30 left" is an instruction. So every field the server
@@ -24,45 +24,63 @@ import (
 
 // The refusal codes. A closed set, because branching on it is the point.
 const (
-	// CodeUnauthorized means the token is missing, unknown or expired.
+	// CodeUnauthorized means the credential is missing, unknown, revoked or
+	// expired. The only refusal that means the key itself does not work.
 	CodeUnauthorized = "unauthorized"
 
-	// CodeForbiddenScope means the token is good and lacks the scope this object
-	// needs. Never returned for an object the caller cannot see at all — that is
-	// CodeNotFound, because saying "forbidden" about an identifier confirms it
-	// exists.
+	// CodeNotBillable means the key is good and the account behind it cannot be
+	// charged. The server answers 402. Retrying will not help until billing is
+	// set up.
+	CodeNotBillable = "not_billable"
+
+	// CodeForbiddenScope means the key is good and does not reach what was
+	// asked: its agent is disabled or not on this service, or it may not watch
+	// the mailbox or send as the sender it named. Never returned for an object
+	// the caller cannot read — that is CodeNotFound, because saying "forbidden"
+	// about an identifier confirms it exists.
 	CodeForbiddenScope = "forbidden_scope"
 
-	// CodeNotFound means the object does not exist, or exists outside every
-	// grant the caller holds.
+	// CodeNotFound means the object does not exist, exists outside every grant
+	// the caller holds, or the operation does not exist.
 	CodeNotFound = "not_found"
 
-	// CodePreconditionFailed means the version did not match. The refusal carries
-	// Current and Version, so the retry needs no extra read.
+	// CodePreconditionFailed means other writes to the same object kept landing
+	// first. Read it again and retry; an UpdateMessage is safe to repeat as it
+	// was. The server answers 409, which it shares with CodePaused.
 	CodePreconditionFailed = "precondition_failed"
 
-	// CodePolicyRefused means a guard fired. Guard names which one.
+	// CodePolicyRefused means a guard fired. Guard names which one. Not worth
+	// retrying unchanged.
 	CodePolicyRefused = "policy_refused"
 
-	// CodeRateLimited means a sending limit is exhausted. Counter names which and
-	// RetryAfter says when it clears.
+	// CodeRateLimited means a limit is spent. Counter names which, and RetryAfter
+	// says when it clears. With no RetryAfter, waiting will not help — a send
+	// with more recipients than the limit allows, say — and the request has to
+	// change.
 	CodeRateLimited = "rate_limited"
 
-	// CodePaused means an operator or an anomaly check paused the mailbox. Unlike
-	// CodeRateLimited it does not clear on its own.
+	// CodePaused means the mailbox is paused and is not sending. Unlike
+	// CodeRateLimited it does not clear on its own. The server answers 409, which
+	// it shares with CodePreconditionFailed, so branch on the code.
 	CodePaused = "paused"
 
-	// CodeInvalid means the request was malformed. Field is a JSON pointer to
-	// where.
+	// CodeInvalid means the request was malformed: a field is wrong, the body
+	// is over its size or nesting limit, or the method is not POST. Field is a
+	// JSON pointer to where, when one field is to blame.
 	CodeInvalid = "invalid"
 
-	// CodeUnavailable means this deployment does not implement the operation.
-	// Retrying will not help until it is redeployed; the server answers 501.
+	// CodeUnavailable means this deployment does not serve this option of the
+	// operation. Retrying will not help; the server answers 404, so branch on
+	// the code rather than the status.
 	CodeUnavailable = "unavailable"
 
 	// CodeInternal means the request was fine and something on the server broke.
-	// The one code where retrying later is the right advice.
+	// The key is fine. Retrying later may succeed.
 	CodeInternal = "internal"
+
+	// CodeUpstreamUnavailable means something bud depends on could not be reached,
+	// and the request had no effect. The server answers 503; retry with backoff.
+	CodeUpstreamUnavailable = "upstream_unavailable"
 
 	// CodeMalformedResponse is this package's own: the server answered with
 	// something that is not the envelope. Distinct from CodeInternal so a caller
@@ -72,17 +90,19 @@ const (
 
 // Sentinels for errors.Is. Only the code is compared.
 var (
-	ErrUnauthorized       = &Error{Code: CodeUnauthorized}
-	ErrForbiddenScope     = &Error{Code: CodeForbiddenScope}
-	ErrNotFound           = &Error{Code: CodeNotFound}
-	ErrPreconditionFailed = &Error{Code: CodePreconditionFailed}
-	ErrPolicyRefused      = &Error{Code: CodePolicyRefused}
-	ErrRateLimited        = &Error{Code: CodeRateLimited}
-	ErrPaused             = &Error{Code: CodePaused}
-	ErrInvalid            = &Error{Code: CodeInvalid}
-	ErrUnavailable        = &Error{Code: CodeUnavailable}
-	ErrInternal           = &Error{Code: CodeInternal}
-	ErrMalformedResponse  = &Error{Code: CodeMalformedResponse}
+	ErrUnauthorized        = &Error{Code: CodeUnauthorized}
+	ErrNotBillable         = &Error{Code: CodeNotBillable}
+	ErrForbiddenScope      = &Error{Code: CodeForbiddenScope}
+	ErrNotFound            = &Error{Code: CodeNotFound}
+	ErrPreconditionFailed  = &Error{Code: CodePreconditionFailed}
+	ErrPolicyRefused       = &Error{Code: CodePolicyRefused}
+	ErrRateLimited         = &Error{Code: CodeRateLimited}
+	ErrPaused              = &Error{Code: CodePaused}
+	ErrInvalid             = &Error{Code: CodeInvalid}
+	ErrUnavailable         = &Error{Code: CodeUnavailable}
+	ErrInternal            = &Error{Code: CodeInternal}
+	ErrUpstreamUnavailable = &Error{Code: CodeUpstreamUnavailable}
+	ErrMalformedResponse   = &Error{Code: CodeMalformedResponse}
 )
 
 // Error is a refusal, with everything the server said about what to do next.
@@ -102,13 +122,13 @@ type Error struct {
 	// including the journal events. Quote it when asking for help.
 	RequestID string `json:"request_id,omitempty"`
 
-	// RetryAfterMs is when the limit clears, on CodeRateLimited. Read it through
-	// RetryAfter.
+	// RetryAfterMs is when the limit clears, on CodeRateLimited, and absent when
+	// waiting will not help. Read it through RetryAfter.
 	RetryAfterMs uint32 `json:"retry_after_ms,omitempty"`
 
-	// Current and Version are set on CodePreconditionFailed: the object as
-	// stored, and the version to quote on the retry. Together they make a
-	// conflict recoverable without a second read.
+	// Current and Version are declared by the wire for a conflict that carries
+	// the object as stored. Nothing served sets them today; a conflict says only
+	// to read again.
 	Current json.RawMessage `json:"current,omitempty"`
 	Version string          `json:"version,omitempty"`
 
@@ -160,9 +180,6 @@ func (e *Error) Error() string {
 	if e.Field != "" {
 		b.WriteString(" [at " + e.Field + "]")
 	}
-	if e.Version != "" {
-		b.WriteString(" [retry with version " + e.Version + "]")
-	}
 	if e.Hint != "" {
 		b.WriteString(" — " + e.Hint)
 	}
@@ -195,31 +212,36 @@ func (e *Error) RetryAfter() time.Duration {
 //
 // A judgment this package is willing to make because the server's codes are
 // specific enough to support it, and because the alternative is every caller
-// writing the same switch. Note what is false: CodeUnavailable is not retryable
-// however transient it looks, because its own hint says the deployment does not
-// implement the operation.
+// writing the same switch.
+//
+// True for:
+//   - CodeUpstreamUnavailable, which the server promises had no effect, so
+//     repeating it cannot duplicate anything;
+//   - CodeRateLimited, when it says how long to wait — without RetryAfter the
+//     request itself has to change;
+//   - CodePreconditionFailed, after reading the object again: other writes
+//     landed first, and an UpdateMessage is safe to repeat as it was;
+//   - CodeInternal, which makes no promise about effects: retry a Send after
+//     it only with the same IdempotencyKey, or the retry can send a second
+//     copy.
+//
+// Note what is false. CodeUnavailable is not retryable however transient it
+// looks, because it means this deployment does not serve that option of the
+// operation. CodePaused clears only when an operator releases the mailbox, so a
+// caller that slept and retried could wait for ever. CodeNotBillable waits on a
+// person setting up billing. CodePolicyRefused is not worth repeating unchanged.
 func (e *Error) Retryable() bool {
 	if e == nil {
 		return false
 	}
 	switch e.Code {
-	case CodeRateLimited, CodePaused, CodeInternal:
+	case CodeUpstreamUnavailable, CodePreconditionFailed, CodeInternal:
 		return true
+	case CodeRateLimited:
+		return e.RetryAfterMs > 0
 	default:
 		return false
 	}
-}
-
-// Into decodes the object a conflict carried into v.
-//
-// The point of Current: after a precondition failure the caller already has the
-// object as stored and the version to quote, so the retry is a merge rather than
-// a second round trip.
-func (e *Error) Into(v any) error {
-	if e == nil || len(e.Current) == 0 {
-		return errors.New("bud: this refusal carries no current object")
-	}
-	return json.Unmarshal(e.Current, v)
 }
 
 // preflight builds a refusal this package produced before sending anything.
