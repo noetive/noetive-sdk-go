@@ -1,6 +1,5 @@
-// Package sse parses Server-Sent Events streams in line with the W3C
-// event-stream format used by Noetive Semantik's /v1/subscribe
-// endpoint.
+// Package sse parses Server-Sent Events streams in the W3C event-stream
+// format, as Semantik's /v1/subscribe and Bud's /v1/watch send them.
 //
 // The scanner is a small, allocation-conscious state machine over
 // [bufio.Scanner]. It recognises the "event:" and "data:" directives,

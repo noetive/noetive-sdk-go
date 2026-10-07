@@ -9,7 +9,7 @@
 //
 // Usage:
 //
-//	NOETIVE_KEY_SECRET=keyu_... go run ./examples/errors
+//	NOETIVE_KEY_SECRET=keya_... go run ./examples/errors
 package main
 
 import (
@@ -46,9 +46,12 @@ func main() {
 
 	// --- 2. Real round trip ----------------------------------------
 	//
-	// Minimal request against the default (global) namespace.
+	// Minimal request against the global namespace, which every account has.
 	_, err = c.Search(ctx, semantik.SearchRequest{
-		Query: `MATCH DISTANCE("machine learning") WITHIN 0.4 LIMIT 5`,
+		Query:      `MATCH DISTANCE("machine learning") WITHIN 0.4 LIMIT 5`,
+		Namespace:  "global",
+		Model:      "Qwen3-Embedding-4B",
+		Dimensions: 1024,
 	})
 	classify("search round trip", err)
 }

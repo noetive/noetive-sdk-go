@@ -6,7 +6,7 @@
 //
 // Usage:
 //
-//	NOETIVE_KEY_SECRET=keyu_... go run ./examples/publish_text
+//	NOETIVE_KEY_SECRET=keya_... go run ./examples/publish_text
 package main
 
 import (

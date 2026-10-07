@@ -6,13 +6,14 @@ This document covers vulnerabilities in the `noetive-sdk-go` source
 tree: the Go packages under
 `go.noetive.io/noetive-sdk-go/...`, their direct
 dependencies as pinned in `go.mod`, and the example programs under
-each service subpackage (e.g. `semantik/examples/`).
+each service subpackage (e.g. `semantik/examples/`). Today that is two
+clients: `semantik` and `bud`.
 
 Out of scope:
 
-- The Semantik service itself (different repository, different
-  operational boundary). Report service vulnerabilities through the
-  channels on <https://noetive.io>.
+- The Noetive services themselves, Semantik and Bud (different
+  repositories, different operational boundary). Report service
+  vulnerabilities through the channels on <https://noetive.io>.
 - Issues in transitive dependencies that are not reachable from SDK
   code.
 - API keys or other credentials leaked outside the SDK (e.g. in your
@@ -40,8 +41,7 @@ Report by **email** to <security@noetive.eu>, using subject line
 
 Include, where possible:
 
-- SDK version (`semantik.Version`, the equivalent symbol on another
-  service subpackage, or `go.mod` pin).
+- SDK version (`semantik.Version`, `bud.Version`, or the `go.mod` pin).
 - Go toolchain and OS/architecture.
 - A minimal reproduction (fewer lines and fewer dependencies is
   better; an `httptest.Server` is ideal for decoder or scanner bugs).
@@ -69,16 +69,20 @@ from code.
 
 - **Credential handling.** API keys are held in the `Client` struct
   and sent as `Authorization: Bearer <key>`. The SDK never logs the
-  key and never writes it to disk. The User-Agent does not include
-  any secret material. `New` rejects only empty / whitespace-only
-  keys; it does not inspect the key's prefix or contents. Deeper
+  key and never writes it to disk; printing a `Client` with `%v` or
+  `%#v` shows it redacted. The User-Agent does not include any secret
+  material. Neither client follows a redirect, so a 3xx cannot carry
+  the credential to a host the caller did not name. A `bud` client
+  built with `Forwarding` holds no key at all and sends only the one
+  carried on each call's context. `New` rejects only empty /
+  whitespace-only keys; it does not inspect the key's prefix or contents. Deeper
   validation is the server's job, and prefix-locking the client would
   break the moment Noetive introduces a new key family.
 - **TLS.** The default HTTP transport is the stdlib's
   `http.DefaultTransport.Clone()` with `ResponseHeaderTimeout`. TLS
   verification is enabled by default; users who need a custom root
   CA set must supply their own `*http.Client` via `WithHTTPClient`.
-- **JSON decoder.** The SDK uses `github.com/goccy/go-json` for both
+- **JSON decoder.** `semantik` uses `github.com/goccy/go-json` for both
   encode and decode. Because that decoder performs unsafe pointer
   arithmetic, the SDK wraps every untrusted decode in `recover()`
   (`semantik/safejson.go`) so regular panics surface as errors instead of
@@ -86,17 +90,24 @@ from code.
   may raise a non-recoverable `runtime.throw` on crafted malformed
   input; this is tracked upstream and the SDK's own unit tests are
   race-clean.
-- **SSE stream.** Frames are capped at 64 KiB (`internal/sse.MaxFrameBytes`).
-  Response body size for structured responses is capped at 1 MiB
-  (`semantik/safejson.go:maxResponseBytes`). The Content-Type of
-  `/v1/subscribe` responses is validated to be `text/event-stream`
-  before any body bytes are consumed.
+  `bud` decodes every response with the standard library's
+  `encoding/json`, because its responses carry text written by
+  strangers — subjects, display names, filenames — and a decoder
+  that cannot be made to crash matters more there than a faster one.
+- **Size bounds.** Every stream frame and response body is bounded, so
+  a misbehaving server or proxy cannot decide how much memory a client
+  holds. `semantik` caps stream frames at 64 KiB
+  (`internal/sse.MaxFrameBytes`) and responses at 1 MiB; `bud` caps
+  stream frames at 4 MiB and responses at 32 MiB. The Content-Type of
+  `semantik`'s `/v1/subscribe` and `bud`'s `/v1/watch` is checked to be
+  `text/event-stream` before any body bytes are consumed.
 - **Fuzz coverage.** `FuzzScanner` (in `./internal/sse`),
   `FuzzErrorDecode`, `FuzzRequestEncode`, and `FuzzMetadataValidation`
-  (in `./semantik`) exercise every untrusted-input path the SDK
-  exposes. Run with
+  (in `./semantik`) exercise the stream scanner both clients share and
+  every untrusted-input path `semantik` exposes. `bud`'s response and
+  stream handling is covered by unit tests, not fuzzers. Run with
   `go test -run=^$ -fuzz=<name> -fuzztime=30s <package>` to reproduce.
-- **Retry safety.** By default the SDK absorbs a single transient
+- **Retry safety.** By default `semantik` absorbs a single transient
   server hiccup per call. It honours the server's wait hint when one
   is offered and otherwise falls back to a bounded delay so a missing
   hint cannot turn a transient failure into a terminal one. Errors
@@ -106,6 +117,10 @@ from code.
   one-shot semantics can pass `WithRetry(NoRetry{})`. Publish without
   an `IdempotencyKey` is the caller's responsibility: pair every
   retry-eligible publish with a key so a retry cannot duplicate.
+  `bud` retries only a connection that failed before any response
+  arrived; a refusal is returned to the caller, never retried. A send
+  is retried only when it carries an `IdempotencyKey`, and no retry
+  policy can widen that.
 
 ## Hall of fame
 

@@ -4,7 +4,7 @@
 //
 // Usage:
 //
-//	NOETIVE_KEY_SECRET=keyu_... go run ./examples/subscribe
+//	NOETIVE_KEY_SECRET=keya_... go run ./examples/subscribe
 //
 // The command runs until SIGINT.
 package main

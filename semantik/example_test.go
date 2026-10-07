@@ -11,7 +11,7 @@ import (
 )
 
 func ExampleNew() {
-	c, err := semantik.New("keyu_abc...")
+	c, err := semantik.New("keya_abc...")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -28,14 +28,14 @@ func ExampleNewFromEnv() {
 }
 
 func ExampleClient_Health() {
-	c, _ := semantik.New("keyu_abc...")
+	c, _ := semantik.New("keya_abc...")
 	if err := c.Health(context.Background()); err != nil {
 		log.Printf("semantik unhealthy: %v", err)
 	}
 }
 
 func ExampleClient_Search() {
-	c, _ := semantik.New("keyu_abc...")
+	c, _ := semantik.New("keya_abc...")
 	res, err := c.Search(context.Background(), semantik.SearchRequest{
 		Query:      `MATCH DISTANCE("machine learning") WITHIN 0.4 LIMIT 10`,
 		Namespace:  "global",
@@ -51,7 +51,7 @@ func ExampleClient_Search() {
 }
 
 func ExampleClient_Publish() {
-	c, _ := semantik.New("keyu_abc...")
+	c, _ := semantik.New("keya_abc...")
 	res, err := c.Publish(context.Background(), semantik.PublishRequest{
 		Items:          []semantik.PublishItem{{Text: "hello world"}},
 		Namespace:      "global",
@@ -67,7 +67,7 @@ func ExampleClient_Publish() {
 }
 
 func ExampleClient_Lint() {
-	c, _ := semantik.New("keyu_abc...")
+	c, _ := semantik.New("keya_abc...")
 	res, err := c.Lint(context.Background(), semantik.LintRequest{
 		Query: `MATCH DISTANCE("machin") WITHIN `,
 	})
@@ -83,7 +83,7 @@ func ExampleClient_Lint() {
 }
 
 func ExampleClient_Subscribe() {
-	c, _ := semantik.New("keyu_abc...")
+	c, _ := semantik.New("keya_abc...")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -112,7 +112,7 @@ func ExampleClient_Subscribe() {
 }
 
 func ExampleSubscription_Next() {
-	c, _ := semantik.New("keyu_abc...")
+	c, _ := semantik.New("keya_abc...")
 	sub, err := c.Subscribe(context.Background(), semantik.SubscribeRequest{Query: "..."})
 	if err != nil {
 		log.Fatal(err)
@@ -133,7 +133,7 @@ func ExampleSubscription_Next() {
 }
 
 func ExampleSubscription_Events() {
-	c, _ := semantik.New("keyu_abc...")
+	c, _ := semantik.New("keya_abc...")
 	sub, err := c.Subscribe(context.Background(), semantik.SubscribeRequest{Query: "..."})
 	if err != nil {
 		log.Fatal(err)
@@ -149,7 +149,7 @@ func ExampleSubscription_Events() {
 }
 
 func ExampleSubscription_Close() {
-	c, _ := semantik.New("keyu_abc...")
+	c, _ := semantik.New("keya_abc...")
 	sub, err := c.Subscribe(context.Background(), semantik.SubscribeRequest{Query: "..."})
 	if err != nil {
 		log.Fatal(err)
@@ -163,7 +163,7 @@ func ExampleTransientRetry() {
 	// The SDK rides out transient hiccups by default. Pass a lower
 	// bound when the workload prefers to fail fast, NoRetry{} for
 	// strict one-shot semantics, or a higher bound to keep trying.
-	c, err := semantik.New("keyu_abc...",
+	c, err := semantik.New("keya_abc...",
 		semantik.WithRetry(semantik.TransientRetry(3)))
 	if err != nil {
 		log.Fatal(err)
@@ -171,6 +171,9 @@ func ExampleTransientRetry() {
 	// Pair retries with an idempotency key so a Publish that lands
 	// after a retried response is not duplicated.
 	_, _ = c.Publish(context.Background(), semantik.PublishRequest{
+		Namespace:      "global",
+		Model:          "Qwen3-Embedding-4B",
+		Dimensions:     1024,
 		Items:          []semantik.PublishItem{{Text: "retrying"}},
 		IdempotencyKey: "pub-idk-1",
 	})
@@ -181,7 +184,7 @@ func ExampleNoRetry() {
 	// request is exactly one round trip. Useful when the caller
 	// wraps requests in its own retry loop or needs strict
 	// one-shot semantics for a benchmark or audit harness.
-	c, err := semantik.New("keyu_abc...",
+	c, err := semantik.New("keya_abc...",
 		semantik.WithRetry(semantik.NoRetry{}))
 	if err != nil {
 		log.Fatal(err)
@@ -190,7 +193,7 @@ func ExampleNoRetry() {
 }
 
 func ExampleError() {
-	c, _ := semantik.New("keyu_abc...")
+	c, _ := semantik.New("keya_abc...")
 	_, err := c.Search(context.Background(), semantik.SearchRequest{Query: "x"})
 	switch {
 	case errors.Is(err, context.Canceled):

@@ -17,9 +17,9 @@ import (
 )
 
 func main() {
-	// Lint does not require auth, but the SDK still needs any valid
-	// key prefix to satisfy [semantik.New]. Reuse a placeholder.
-	c, err := semantik.New("keyu_placeholder_for_lint_only")
+	// Lint does not require auth, but [semantik.New] still needs a
+	// non-empty key. Any placeholder will do.
+	c, err := semantik.New("keya_placeholder_for_lint_only")
 	if err != nil {
 		log.Fatalf("init: %v", err)
 	}

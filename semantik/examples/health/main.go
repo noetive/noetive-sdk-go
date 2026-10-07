@@ -24,7 +24,7 @@ func main() {
 	// set — which would be noise for this particular probe.
 	key := os.Getenv("NOETIVE_KEY_SECRET")
 	if key == "" {
-		key = "keyu_placeholder_for_health_only"
+		key = "keya_placeholder_for_health_only"
 	}
 	opts := []semantik.Option{}
 	if base := os.Getenv("NOETIVE_SEMANTIK_BASE_URL"); base != "" {

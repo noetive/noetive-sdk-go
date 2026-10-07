@@ -17,7 +17,7 @@
 //
 // Usage:
 //
-//	NOETIVE_KEY_SECRET=keyu_... go run ./examples/custom_retry
+//	NOETIVE_KEY_SECRET=keya_... go run ./examples/custom_retry
 package main
 
 import (
@@ -31,7 +31,7 @@ import (
 )
 
 func main() {
-	apiKey := "keyu_demo_key_replace_with_a_real_one"
+	apiKey := "keya_demo_key_replace_with_a_real_one"
 
 	// --- 1. Strict one-shot: disable retries -----------------------------
 	//
@@ -63,7 +63,10 @@ func demo(c *semantik.Client, label string) {
 	defer cancel()
 
 	_, err := c.Search(ctx, semantik.SearchRequest{
-		Query: `MATCH DISTANCE("hello world") WITHIN 0.5 LIMIT 1`,
+		Query:      `MATCH DISTANCE("hello world") WITHIN 0.5 LIMIT 1`,
+		Namespace:  "global",
+		Model:      "Qwen3-Embedding-4B",
+		Dimensions: 1024,
 	})
 	switch {
 	case err == nil:

@@ -19,7 +19,7 @@ Full API documentation: https://pkg.go.dev/go.noetive.io/noetive-sdk-go/semantik
 import "context"
 import "go.noetive.io/noetive-sdk-go/semantik"
 
-c, err := semantik.New("keyu_...")   // or semantik.NewFromEnv()
+c, err := semantik.New("keya_...")   // or semantik.NewFromEnv()
 if err != nil { log.Fatal(err) }
 
 // Namespace, Model and Dimensions are required on every request.
@@ -51,9 +51,8 @@ has to be named explicitly like any other.
 
 ## Authentication
 
-Pass an API key from the Noetive dashboard. Keys start with `keyu_`
-(user) or `keyt_` (tenant). The SDK refuses only an empty or
-whitespace-only key; it does not inspect the prefix or contents, so the
+Pass an API key from the Noetive dashboard; one key reaches every Noetive
+service. The SDK refuses only an empty or whitespace-only key; it does not inspect the prefix or contents, so the
 server is the source of truth for everything else.
 
 `semantik.NewFromEnv()` reads:
@@ -168,7 +167,7 @@ you can run against a live server with a real API key.
 Run any of them from the module root with:
 
 ```
-NOETIVE_KEY_SECRET=keyu_... go run ./semantik/examples/<name>
+NOETIVE_KEY_SECRET=keya_... go run ./semantik/examples/<name>
 ```
 
 ## Performance
@@ -202,7 +201,7 @@ go test -run=^$ -fuzz=FuzzRequestEncode       -fuzztime=30s ./semantik
 go test -run=^$ -fuzz=FuzzMetadataValidation  -fuzztime=30s ./semantik
 
 # Integration (hits https://semantik.noetive.io)
-NOETIVE_KEY_SECRET=keyu_... go test -tags=integration -count=1 -v ./semantik/integration/...
+NOETIVE_KEY_SECRET=keya_... go test -tags=integration -count=1 -v ./semantik/integration/...
 ```
 
 The SDK uses `github.com/goccy/go-json` for both encode and decode.

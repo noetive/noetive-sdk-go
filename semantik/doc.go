@@ -3,7 +3,7 @@
 //
 // # Quick start
 //
-//	c, err := semantik.New("keyu_...")
+//	c, err := semantik.New("keya_...")
 //	if err != nil { log.Fatal(err) }
 //
 //	res, err := c.Search(ctx, semantik.SearchRequest{
@@ -23,9 +23,8 @@
 // # Authentication
 //
 // Requests carry an API key as Authorization: Bearer <key>. Keys are
-// issued by the Noetive dashboard and have the form keyu_<base58>
-// (user-owned) or keyt_<base58> (tenant-owned). The SDK checks only
-// that the key is non-empty; it does not inspect the prefix or
+// issued by the Noetive dashboard, and one key reaches every Noetive
+// service. The SDK checks only that the key is non-empty; it does not inspect the prefix or
 // contents, so deeper validation is left to the server.
 //
 // Environment constructor: [NewFromEnv] reads NOETIVE_KEY_SECRET (required)

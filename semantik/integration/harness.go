@@ -6,7 +6,7 @@
 //
 // Required environment:
 //
-//	NOETIVE_KEY_SECRET  — a valid production API key (keyu_... or keyt_...)
+//	NOETIVE_KEY_SECRET  — a valid production API key (keya_...)
 //
 // Invocation:
 //

@@ -4,7 +4,7 @@
 //
 // Usage:
 //
-//	NOETIVE_KEY_SECRET=keyu_... go run ./examples/search
+//	NOETIVE_KEY_SECRET=keya_... go run ./examples/search
 package main
 
 import (
