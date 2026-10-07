@@ -13,25 +13,23 @@ import (
 //
 // # The problem this solves
 //
-// noetive-bud declares the same eighteen shapes in its own pkg/wire. That module
-// is private, so this package cannot import it, and two hand-written definitions
-// of one contract drift. The drift is the bad kind: both sides compile, both
+// The service declares the same eighteen shapes in its own code, which is not
+// published as a Go module, so this package cannot import it, and two
+// hand-written definitions of one contract drift. The drift is the bad kind: both sides compile, both
 // encode, and the difference surfaces as a field that silently stopped arriving —
 // in production, months later, in somebody else's program.
 //
 // So the *encoding* is compared rather than the types. Both sides walk their own
 // structs by reflection and write down, per exported field, the JSON name, the
-// wire kind and whether it is omitempty. The server emits that with
-// `bud contract`; this package vendors it under testdata and fails its own build
-// when the two disagree.
+// wire kind and whether it is omitempty. The service's description is vendored
+// under testdata, and this package fails its own build when the two disagree.
 //
 // # Why vendored rather than fetched
 //
 // A check that reaches the network passes when the network is down, and a check
 // that reads a sibling checkout passes only on the machine that has one.
-// Refreshing it is a copy somebody performs and a reviewer sees:
-//
-//	cd ../noetive-bud && go run ./cmd/bud contract -o ../noetive-sdk-go/bud/testdata/contract
+// Refreshing it is a copy a maintainer makes from the service's own description,
+// and a change a reviewer sees in the diff.
 //
 // # What it deliberately ignores
 //
@@ -119,9 +117,8 @@ func fieldsOf(t reflect.Type) []string {
 	}
 
 	out := make([]string, 0, t.NumField())
-	// Indexed rather than the Fields iterator: this module targets an older Go
-	// than noetive-bud does, and a public SDK should not raise its floor to
-	// borrow a loop.
+	// Indexed rather than the Fields iterator: this module supports older Go
+	// releases, and a public SDK should not raise its floor to borrow a loop.
 	for i := 0; i < t.NumField(); i++ {
 		f := t.Field(i)
 		if !f.IsExported() {

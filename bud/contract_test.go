@@ -8,11 +8,8 @@ import (
 	"go.noetive.io/noetive-sdk-go/bud"
 )
 
-// goldenPath is the server's own description of its shapes, vendored.
-//
-// Refresh with:
-//
-//	cd ../noetive-bud && go run ./cmd/bud contract -o ../noetive-sdk-go/bud/testdata/contract
+// goldenPath is the service's own description of its shapes, vendored. A
+// maintainer refreshes it from the service; see contract.go.
 const goldenPath = "testdata/contract/contract.golden"
 
 // TestContractMatchesTheServer is the reason this package can be hand-written.
@@ -32,7 +29,7 @@ func TestContractMatchesTheServer(t *testing.T) {
 	want, err := os.ReadFile(goldenPath)
 	if err != nil {
 		t.Fatalf("reading %s: %v\n\t"+
-			"vendor it with: cd ../noetive-bud && go run ./cmd/bud contract -o ../noetive-sdk-go/bud/testdata/contract",
+			"vendor the service's contract description there; see contract.go",
 			goldenPath, err)
 	}
 	got := bud.ContractShape()
@@ -55,7 +52,7 @@ func TestContractMatchesTheServer(t *testing.T) {
 			"Decide which side is right before changing either. If the server moved, refresh\n"+
 			"the golden and match it here. If this package is wrong, fix it — a client that\n"+
 			"encodes a field the server does not read loses it silently.\n\n"+
-			"  cd ../noetive-bud && go run ./cmd/bud contract -o ../noetive-sdk-go/bud/testdata/contract",
+			"  Refresh the golden from the service's contract description; see contract.go.",
 			i+1, w, g)
 	}
 }

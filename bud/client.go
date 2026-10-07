@@ -510,9 +510,8 @@ func (c *Client) credential(ctx context.Context) string {
 // a deliberate divergence from the semantik package. These bodies carry text a
 // stranger wrote — a subject, a display name, a filename — and goccy/go-json
 // v0.10.6 has two out-of-bounds reads on exactly that kind of input, one of which
-// is a fatal checkptr violation under -race that recover cannot intercept. The
-// server encodes with goccy and decodes with the standard library for this reason;
-// this package is the other end of the same exchange and takes the same side.
+// is a fatal checkptr violation under -race that recover cannot intercept. A
+// decoder that cannot be made to crash is worth more here than a faster one.
 func decodeEnvelope(status int, raw []byte, requestID string, out any) error {
 	if len(bytes.TrimSpace(raw)) == 0 {
 		return errorFrom(status, raw, requestID)

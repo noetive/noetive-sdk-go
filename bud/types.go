@@ -9,15 +9,15 @@ import (
 //
 // # Why hand-written and not generated
 //
-// These are the same shapes noetive-bud declares in its own pkg/wire. That module
-// is private, so a public SDK cannot import it, and there are only a couple of
-// dozen structs — few enough that writing them is cheaper than owning a
+// These are the same shapes the service declares. Its definitions are not
+// published as a Go module, so this package cannot import them, and there are
+// only a couple of dozen structs — few enough that writing them is cheaper than owning a
 // generator, and the doc comments are worth more than anything a generator would
 // produce.
 //
-// What is checked rather than hoped for is the *encoding*. The server emits a
-// description of its own shapes with `bud contract`; this package reproduces that
-// description by reflection over these structs and fails its build when the two
+// What is checked rather than hoped for is the *encoding*. The service describes
+// its own shapes, that description is vendored under testdata, and this package
+// reproduces it by reflection over these structs and fails its build when the two
 // disagree. See contract.go. A field renamed, retyped or re-tagged on either side
 // is a red test, not a field that silently stops arriving.
 //
