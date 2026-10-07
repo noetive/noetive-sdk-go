@@ -24,15 +24,15 @@ import (
 //     before any response byte arrived.
 //   - A request that writes is retried only when it carried an idempotency key.
 //
-// The last one is a gate in code rather than a line in a comment, because
+// The last one is a gate in the client rather than in the policy, because
 // WithRetry must not be able to widen it. A caller can turn retries off or tune
 // the schedule; it cannot make an unkeyed send repeatable.
 
 // RetryPolicy decides whether to re-issue a request.
 type RetryPolicy interface {
 	// ShouldRetry reports whether attempt may be repeated. op is the operation
-	// path and in is the request, so a policy can see whether a write carried a
-	// key.
+	// path and in is the request. A write without an idempotency key never
+	// reaches a policy, so no policy can make one repeatable.
 	ShouldRetry(attempt int, op string, in any) bool
 
 	// Wait blocks before the next attempt, or returns the context's error.
@@ -60,17 +60,10 @@ type TransientRetry struct {
 
 func defaultRetry() RetryPolicy { return TransientRetry{Attempts: 1} }
 
-// ShouldRetry applies the idempotency gate.
-func (p TransientRetry) ShouldRetry(attempt int, op string, in any) bool {
-	if attempt >= p.Attempts {
-		return false
-	}
-	if !writes(op) {
-		return true
-	}
-	// A write without a key the caller chose is not repeatable, whatever policy
-	// is installed. This is the check WithRetry cannot remove.
-	return idempotencyKeyOf(in) != ""
+// ShouldRetry allows Attempts retries. Whether the request may be repeated at
+// all is decided before any policy is asked; see [Client.mayRetry].
+func (p TransientRetry) ShouldRetry(attempt int, _ string, _ any) bool {
+	return attempt < p.Attempts
 }
 
 func (p TransientRetry) Wait(ctx context.Context, attempt int) error {
@@ -88,6 +81,20 @@ func (p TransientRetry) Wait(ctx context.Context, attempt int) error {
 	case <-timer.C:
 		return nil
 	}
+}
+
+// mayRetry decides whether a request that failed before any response may be
+// repeated.
+//
+// The idempotency gate is here, in the client, and only then is the policy
+// asked: a write without a key the caller chose is not repeatable whatever
+// policy is installed, so WithRetry can narrow or reschedule retries and never
+// widen them. A refusal this package produced is an answer and is not retried.
+func (c *Client) mayRetry(attempt int, op string, in any) bool {
+	if writes(op) && idempotencyKeyOf(in) == "" {
+		return false
+	}
+	return c.retry.ShouldRetry(attempt, op, in)
 }
 
 // writes reports whether an operation changes anything.

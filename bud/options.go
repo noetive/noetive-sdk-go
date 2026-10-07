@@ -54,10 +54,9 @@ type Doer interface {
 type Option func(*config)
 
 type config struct {
-	httpClient    Doer
-	retry         RetryPolicy
-	baseURL       string
-	authorization string
+	httpClient Doer
+	retry      RetryPolicy
+	baseURL    string
 }
 
 // WithBaseURL points the client at another deployment.
@@ -80,16 +79,6 @@ func WithHTTPClient(d Doer) Option {
 // WithRetry installs a retry policy. [NoRetry] opts out.
 func WithRetry(p RetryPolicy) Option {
 	return func(c *config) { c.retry = p }
-}
-
-// WithAuthorization sets the Authorization header verbatim.
-//
-// For a caller that already has the header — a relay handling one request, or a
-// scheme this package has never heard of. It is passed through untouched: parsing
-// a credential is the first step towards deciding about it, and deciding belongs
-// to the service that owns the credential.
-func WithAuthorization(header string) Option {
-	return func(c *config) { c.authorization = header }
 }
 
 // NewFromEnv builds a client from the two environment variables.

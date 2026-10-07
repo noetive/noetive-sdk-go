@@ -1,6 +1,7 @@
 package bud_test
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -333,4 +334,67 @@ func mustClient(t *testing.T, base string) *bud.Client {
 		t.Fatalf("New: %v", err)
 	}
 	return c
+}
+
+// alwaysRetry is a policy that would repeat anything, to prove the write gate
+// is the client's and not the policy's.
+type alwaysRetry struct{}
+
+func (alwaysRetry) ShouldRetry(attempt int, _ string, _ any) bool { return attempt < 3 }
+func (alwaysRetry) Wait(context.Context, int) error               { return nil }
+
+// TestNoPolicyCanRetryAnUnkeyedWrite: WithRetry tunes the schedule; it cannot
+// make an unkeyed send repeatable, whatever the installed policy says.
+func TestNoPolicyCanRetryAnUnkeyedWrite(t *testing.T) {
+	t.Parallel()
+
+	var attempts atomic.Int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		attempts.Add(1)
+		if hj, ok := w.(http.Hijacker); ok {
+			if conn, _, err := hj.Hijack(); err == nil {
+				_ = conn.Close()
+			}
+		}
+	}))
+	defer srv.Close()
+
+	c, err := bud.New("t", bud.WithBaseURL(srv.URL), bud.WithRetry(alwaysRetry{}))
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if _, err := c.Send(t.Context(), bud.SendInput{To: []string{"a@b.example"}}); err == nil {
+		t.Fatal("a failed connection was reported as success")
+	}
+	if n := attempts.Load(); n != 1 {
+		t.Errorf("an unkeyed send was attempted %d times under a permissive policy; it must be once", n)
+	}
+}
+
+// TestAResponseThatBrokeOffIsNotRetried: once a response has begun, the
+// request reached the service, so repeating it could repeat its effect.
+func TestAResponseThatBrokeOffIsNotRetried(t *testing.T) {
+	t.Parallel()
+
+	var attempts atomic.Int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		attempts.Add(1)
+		// Promise more body than is sent, so the read fails after the headers.
+		w.Header().Set("Content-Length", "1000")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"kind":`))
+	}))
+	defer srv.Close()
+
+	c, err := bud.New("t", bud.WithBaseURL(srv.URL),
+		bud.WithRetry(bud.TransientRetry{Attempts: 3, Backoff: []time.Duration{time.Millisecond}}))
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if _, err := c.DescribeMe(t.Context()); err == nil {
+		t.Fatal("a truncated response was reported as success")
+	}
+	if n := attempts.Load(); n != 1 {
+		t.Errorf("a response that broke off was retried: %d attempts", n)
+	}
 }

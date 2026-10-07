@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -97,10 +98,9 @@ func newClient(opts ...Option) *Client {
 		opt(&cfg)
 	}
 	return &Client{
-		doer:          cfg.httpClient,
-		baseURL:       strings.TrimRight(cfg.baseURL, "/"),
-		retry:         cfg.retry,
-		authorization: cfg.authorization,
+		doer:    cfg.httpClient,
+		baseURL: strings.TrimRight(cfg.baseURL, "/"),
+		retry:   cfg.retry,
 	}
 }
 
@@ -458,9 +458,14 @@ func (c *Client) call(ctx context.Context, op string, in, out any) error {
 			return decodeEnvelope(status, raw, requestID, out)
 		}
 
-		// Only a connection that failed before any byte of a response is worth
-		// retrying, and only where retrying cannot duplicate an effect.
-		if !c.retry.ShouldRetry(attempt, op, in) {
+		// Only a connection that failed before any response is worth retrying.
+		// A status means the request reached the service, and repeating it
+		// could repeat its effect.
+		var local *Error
+		if errors.As(err, &local) {
+			return err
+		}
+		if status != 0 || !c.mayRetry(attempt, op, in) {
 			return err
 		}
 		if waitErr := c.retry.Wait(ctx, attempt); waitErr != nil {

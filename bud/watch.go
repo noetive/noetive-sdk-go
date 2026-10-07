@@ -229,7 +229,7 @@ func (c *Client) connect(ctx context.Context, in WaitInput, body []byte) (*http.
 		if err == nil {
 			return resp, nil
 		}
-		if !c.retry.ShouldRetry(attempt, "watch", in) {
+		if !c.mayRetry(attempt, "watch", in) {
 			return nil, err
 		}
 		if waitErr := c.retry.Wait(ctx, attempt); waitErr != nil {
