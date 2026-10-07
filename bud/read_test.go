@@ -290,3 +290,30 @@ func TestASendNeedsARecipientAnywhere(t *testing.T) {
 		}
 	}
 }
+
+// TestAPartsReadingListsWhatDescribePartTakes: the part numbers a parts
+// reading lists are the ones DescribePart accepts, nested parts included.
+func TestAPartsReadingListsWhatDescribePartTakes(t *testing.T) {
+	t.Parallel()
+
+	out := bud.ReadOutput{Kind: bud.KindMessage, Content: []byte(`{"message":"message_01x","parts":[` +
+		`{"n":"1","type":"multipart/alternative","size":0,"range":[0,9],"children":[` +
+		`{"n":"1.1","type":"text/plain","charset":"utf-8","size":12},` +
+		`{"n":"1.2","type":"text/html","size":40}]},` +
+		`{"n":"2","type":"application/pdf","filename":"invoice.pdf","disposition":"attachment","size":2048}]}`)}
+
+	var pm bud.PartMap
+	if err := out.Into(&pm); err != nil {
+		t.Fatalf("Into: %v", err)
+	}
+	if len(pm.Parts) != 2 || len(pm.Parts[0].Children) != 2 || pm.Parts[0].Children[0].N != "1.1" {
+		t.Fatalf("PartMap = %+v", pm)
+	}
+	if p := pm.Parts[1]; p.N != "2" || p.Filename != "invoice.pdf" || p.Size != 2048 {
+		t.Errorf("attachment = %+v", p)
+	}
+
+	if err := (bud.ReadOutput{Kind: bud.KindPart, Content: out.Content}).Into(&pm); !errors.Is(err, bud.ErrInvalid) {
+		t.Errorf("a part answer decoded into a PartMap: %v", err)
+	}
+}

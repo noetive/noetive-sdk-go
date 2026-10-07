@@ -449,6 +449,27 @@ type PartView struct {
 	Bytes []byte `json:"bytes_base64,omitempty"`
 }
 
+// PartMap is a message's structure: what DescribeMessage returns as Content
+// with RenderParts. Each part's N is what DescribePart takes as ByID.Part.
+type PartMap struct {
+	Message string     `json:"message"`
+	Parts   []PartInfo `json:"parts,omitempty"`
+}
+
+// PartInfo is one part of a message, as a parts reading lists it.
+//
+// Type, Charset, Filename and Disposition are what the sender declared, and
+// are claims rather than facts.
+type PartInfo struct {
+	N           string     `json:"n"`
+	Type        string     `json:"type"`
+	Charset     string     `json:"charset,omitempty"`
+	Filename    string     `json:"filename,omitempty"`
+	Disposition string     `json:"disposition,omitempty"`
+	Size        int64      `json:"size"`
+	Children    []PartInfo `json:"children,omitempty"`
+}
+
 // Into decodes Content into one of the views.
 //
 // Everything Content carries about mail was written by somebody else — an
@@ -460,8 +481,9 @@ type PartView struct {
 // such as help, whose Text is the whole of it.
 //
 // The kind is checked for this package's views — *Me, *MailboxView, *Listing,
-// *Correspondents, *Conversation, *PartView. Any other type, a caller's own
-// struct for a message's state included, is decoded as asked.
+// *Correspondents, *Conversation, *PartView, and *PartMap for a message read
+// with RenderParts. Any other type, a caller's own struct for a message's
+// state included, is decoded as asked.
 func (o ReadOutput) Into(v any) error {
 	if o.Error != nil {
 		return o.Error
@@ -491,6 +513,8 @@ func viewKind(v any) string {
 		return KindThread
 	case *PartView:
 		return KindPart
+	case *PartMap:
+		return KindMessage
 	default:
 		return ""
 	}
