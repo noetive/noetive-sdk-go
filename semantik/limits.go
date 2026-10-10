@@ -31,6 +31,10 @@ const (
 	// MaxPublishBodyBytes is the /v1/publish body size limit.
 	MaxPublishBodyBytes = 2 * 1024 * 1024
 
+	// MaxGroupLen is the largest subscription group name length in bytes.
+	// Group names are ASCII letters, digits, "-" and "_" only.
+	MaxGroupLen = 64
+
 	// MaxSubscribeBodyBytes is the /v1/subscribe body size limit.
 	MaxSubscribeBodyBytes = 1 * 1024 * 1024
 

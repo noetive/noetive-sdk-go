@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 )
@@ -274,5 +275,116 @@ func TestSubscribe_PreflightRejectsEmptyQuery(t *testing.T) {
 	_, err := c.Subscribe(t.Context(), SubscribeRequest{Namespace: "n", Model: "m", Dimensions: 3})
 	if !errors.Is(err, ErrInvalidRequest) {
 		t.Errorf("want ErrInvalidRequest, got %v", err)
+	}
+}
+
+// Group is optional: an empty Group means "ungrouped" and must pass
+// preflight, otherwise every pre-existing caller would break.
+func TestSubscribe_GroupEmptyMeansUngrouped(t *testing.T) {
+	req := SubscribeRequest{Query: "q", Namespace: "n", Model: "m", Dimensions: 3}
+	if err := req.validate(); err != nil {
+		t.Fatalf("validate with empty Group: %v", err)
+	}
+}
+
+// Group values outside the server's contract (too long, spaces,
+// non-ASCII, punctuation) must fail locally with ErrInvalidRequest so
+// the caller gets a clear error instead of a round-trip 400.
+func TestSubscribe_GroupPreflightRejectsInvalid(t *testing.T) {
+	cases := map[string]string{
+		"65 chars":  strings.Repeat("a", MaxGroupLen+1),
+		"space":     "two words",
+		"non-ascii": "rôle",
+		"slash":     "a/b",
+		"newline":   "a\nb",
+	}
+	c, _ := New(testKey)
+	for name, g := range cases {
+		t.Run(name, func(t *testing.T) {
+			_, err := c.Subscribe(t.Context(), SubscribeRequest{
+				Query: "q", Namespace: "n", Model: "m", Dimensions: 3, Group: g,
+			})
+			if !errors.Is(err, ErrInvalidRequest) {
+				t.Errorf("Group %q: want ErrInvalidRequest, got %v", g, err)
+			}
+		})
+	}
+}
+
+// The documented boundary (64 chars) and the full alphabet must be
+// accepted, so the SDK is never stricter than the server.
+func TestSubscribe_GroupPreflightAcceptsValid(t *testing.T) {
+	for _, g := range []string{strings.Repeat("a", MaxGroupLen), "pandemic-roles_2", "A-Z_0-9", "x"} {
+		req := SubscribeRequest{Query: "q", Namespace: "n", Model: "m", Dimensions: 3, Group: g}
+		if err := req.validate(); err != nil {
+			t.Errorf("Group %q: unexpected error %v", g, err)
+		}
+	}
+}
+
+// The wire body carries "group" only when set; an always-present empty
+// group would be read by the server as an invalid (empty) name.
+func TestSubscribe_GroupWireBody(t *testing.T) {
+	for _, tc := range []struct {
+		name, group string
+		wantKey     bool
+	}{{"unset", "", false}, {"set", "pandemic-roles", true}} {
+		t.Run(tc.name, func(t *testing.T) {
+			var raw map[string]any
+			_, c := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+				readJSON(t, r, &raw)
+				w.Header().Set("Content-Type", "text/event-stream")
+				w.WriteHeader(http.StatusOK)
+				_, _ = io.WriteString(w, "event: subscribed\ndata: {\"subscription_id\":\"s\"}\n\n")
+				w.(http.Flusher).Flush()
+			})
+			sub, err := c.Subscribe(t.Context(), SubscribeRequest{
+				Query: "q", Namespace: "n", Model: "m", Dimensions: 3, Group: tc.group,
+			})
+			if err != nil {
+				t.Fatalf("Subscribe: %v", err)
+			}
+			defer sub.Close()
+			got, ok := raw["group"]
+			if ok != tc.wantKey {
+				t.Fatalf("group key present = %v, want %v (body %v)", ok, tc.wantKey, raw)
+			}
+			if ok && got != tc.group {
+				t.Errorf("group = %v, want %q", got, tc.group)
+			}
+		})
+	}
+}
+
+// Lead must distinguish "absent" (uncontested/ungrouped) from 0 (a
+// tie); callers branch on that, so decoding must not collapse the two.
+func TestSubscribe_MatchLeadAbsentVersusZero(t *testing.T) {
+	_, c := newTestServer(t, sseHandler(t, []string{
+		"event: subscribed\ndata: {\"subscription_id\":\"s\"}\n\n",
+		"event: match\ndata: {\"message_id\":\"a\",\"score\":0.9}\n\n",
+		"event: match\ndata: {\"message_id\":\"b\",\"score\":0.9,\"lead\":0}\n\n",
+		"event: match\ndata: {\"message_id\":\"c\",\"score\":0.9,\"lead\":0.25}\n\n",
+	}))
+	sub, err := c.Subscribe(t.Context(), SubscribeRequest{Query: "q", Namespace: "n", Model: "m", Dimensions: 3, Group: "g"})
+	if err != nil {
+		t.Fatalf("Subscribe: %v", err)
+	}
+	defer sub.Close()
+	var evs []MatchEvent
+	for range 3 {
+		ev, err := sub.Next(t.Context())
+		if err != nil {
+			t.Fatalf("Next: %v", err)
+		}
+		evs = append(evs, ev)
+	}
+	if evs[0].Lead != nil {
+		t.Errorf("absent lead = %v, want nil", *evs[0].Lead)
+	}
+	if evs[1].Lead == nil || *evs[1].Lead != 0 {
+		t.Errorf("lead:0 = %v, want non-nil 0", evs[1].Lead)
+	}
+	if evs[2].Lead == nil || *evs[2].Lead != 0.25 {
+		t.Errorf("lead:0.25 = %v, want 0.25", evs[2].Lead)
 	}
 }

@@ -149,6 +149,38 @@ Notes:
   subscription. Wrap `Subscribe`+`Next` in your own loop and dedupe
   on `MessageID` if you need reconnect semantics.
 
+### Message groups
+
+Set `Group` on a `SubscribeRequest` to split one stream between several
+subscriptions, for example one per agent role. When a message matches
+more than one member of a group, only the best-scoring member receives
+it; on an exact tie every tied member does. Subscriptions without a
+group receive every match. A group name is 1 to 64 characters: ASCII
+letters, digits, `-` and `_`. Members of a group must use the same
+clause kinds (DISTANCE, DIRECTION, CONTRAST) and, for DISTANCE, the same
+metric; otherwise the request fails with `invalid_request`.
+
+```go
+sub, err := c.Subscribe(ctx, semantik.SubscribeRequest{
+    Query:      `MATCH DISTANCE("we need a database expert")`,
+    Namespace:  "global",
+    Model:      "Qwen3-Embedding-4B",
+    Dimensions: 1024,
+    Group:      "pandemic-roles",
+})
+// ...
+for ev, err := range sub.Events(ctx) {
+    if err != nil { break }
+    if ev.Lead != nil {
+        // Contested: another member also matched. *ev.Lead is this
+        // score minus the best other score; 0 means a tie.
+    }
+}
+```
+
+`MatchEvent.Lead` is a pointer so that "absent" (uncontested or
+ungrouped) differs from `0` (a tie).
+
 ## Examples
 
 Every example under `examples/` is a self-contained `main` program

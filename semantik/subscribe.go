@@ -32,11 +32,36 @@ import (
 //	    Dimensions: 1024,
 //	}
 //
+// Group is optional. Subscriptions on the same account and namespace
+// that name the same group compete for messages (see "message groups" below); leave it
+// empty for an ordinary subscription that receives every match. A group
+// name is 1 to [MaxGroupLen] characters drawn from ASCII letters, digits,
+// "-" and "_"; anything else is rejected at preflight.
+//
+// # Message groups
+//
+// Message groups split one stream between several consumers by meaning.
+// When a message matches more than one member of a group, only the
+// best-scoring member receives it; on an exact tie every tied member
+// does. [MatchEvent.Lead] reports by how much a delivery won. Members of
+// a group must use the same clause kinds (DISTANCE, DIRECTION, CONTRAST)
+// and, for DISTANCE, the same metric, otherwise the request fails with an
+// invalid_request error.
+//
+//	req := semantik.SubscribeRequest{
+//	    Query:      `MATCH DISTANCE("hospital reports a shortage of ICU beds")`,
+//	    Namespace:  "global",
+//	    Model:      "Qwen3-Embedding-4B",
+//	    Dimensions: 1024,
+//	    Group:      "pandemic-roles",
+//	}
+//
 // Field ordering: strings (16 B each) > uint16 (2 B).
 type SubscribeRequest struct {
 	Query      string `json:"query"`
 	Namespace  string `json:"namespace"`
 	Model      string `json:"model"`
+	Group      string `json:"group,omitempty"`
 	Dimensions uint16 `json:"dimensions"`
 }
 
@@ -48,10 +73,18 @@ type SubscribedEvent struct {
 
 // MatchEvent is the payload of each "match" SSE frame.
 //
-// Field ordering: string (16 B) > float32 (4 B).
+// Lead is set only for a grouped subscription ([SubscribeRequest.Group])
+// when another member of the group also matched the message: it is this
+// subscription's score minus the best other member's score. A pointer
+// distinguishes the cases: nil means the match was uncontested or the
+// subscription is ungrouped; a non-nil 0 means an exact tie with another
+// member. Dereference only after checking for nil.
+//
+// Field ordering: string (16 B) > pointer (8 B) > float32 (4 B).
 type MatchEvent struct {
-	MessageID string  `json:"message_id"`
-	Score     float32 `json:"score"`
+	MessageID string   `json:"message_id"`
+	Lead      *float32 `json:"lead,omitempty"`
+	Score     float32  `json:"score"`
 }
 
 // Subscription is a live SSE match stream. It is safe to call [Close]
@@ -383,7 +416,22 @@ func (r SubscribeRequest) validate() *Error {
 	if r.Query == "" {
 		return preflightErr("subscribe query must not be empty")
 	}
+	if r.Group != "" {
+		if len(r.Group) > MaxGroupLen {
+			return preflightErr("subscribe group must be at most %d characters, got %d", MaxGroupLen, len(r.Group))
+		}
+		for i := 0; i < len(r.Group); i++ {
+			if !isGroupByte(r.Group[i]) {
+				return preflightErr("subscribe group may contain only ASCII letters, digits, '-' and '_'")
+			}
+		}
+	}
 	return validateTarget(r.Namespace, r.Model, r.Dimensions)
+}
+
+// isGroupByte reports whether b is allowed in a subscription group name.
+func isGroupByte(b byte) bool {
+	return b >= 'a' && b <= 'z' || b >= 'A' && b <= 'Z' || b >= '0' && b <= '9' || b == '-' || b == '_'
 }
 
 // isEventStreamContentType reports whether ct is a valid

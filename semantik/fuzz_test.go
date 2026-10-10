@@ -162,6 +162,7 @@ func FuzzRequestEncode(f *testing.F) {
 		`{"query":"MATCH DISTANCE(\"x\") LIMIT 4","cursor":5}`,
 		`{"query":"q","namespace":"n","model":"m","dimensions":3,"limit":42}`,
 		`{"query":"sub query","namespace":"n","model":"m","dimensions":3}`,
+		`{"query":"q","namespace":"n","model":"m","dimensions":3,"group":"pandemic-roles_2"}`,
 	}
 	for _, s := range seeds {
 		f.Add([]byte(s))
@@ -599,6 +600,11 @@ func FuzzMatchEventDecode(f *testing.F) {
 	seeds := []string{
 		`{}`,
 		`{"message_id":"m","score":0.9}`,
+		`{"message_id":"m","score":0.9,"lead":0}`,
+		`{"message_id":"m","score":0.9,"lead":0.12}`,
+		`{"message_id":"m","score":0.9,"lead":-0.5}`,
+		`{"message_id":"m","score":0.9,"lead":null}`,
+		`{"message_id":"m","score":0.9,"lead":1e40}`,
 		`{"message_id":"m"}`,
 		`{"score":1.5}`,
 		`{"score":3.5e38}`,  // overflows float32 → +Inf

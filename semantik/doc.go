@@ -63,4 +63,13 @@
 // [Subscription.Events]. The public API does not send heartbeats, so
 // callers behind idle-connection-reaping proxies should bound each read
 // with [context.WithTimeout].
+//
+// # Message groups
+//
+// Set [SubscribeRequest.Group] to make subscriptions compete for messages:
+// when a message matches several members of a group, only the
+// best-scoring member receives it (exact ties reach every tied member).
+// For a grouped subscription, [MatchEvent.Lead] reports how far ahead
+// the delivery was; it is nil when no other member matched, and a
+// non-nil 0 means a tie.
 package semantik
