@@ -15,7 +15,7 @@ import (
 
 func BenchmarkSearchEncode(b *testing.B) {
 	req := SearchRequest{
-		Query:      `MATCH DISTANCE("machine learning research") WITHIN 0.4 LIMIT 10`,
+		Query:      `MATCH DISTANCE("machine learning research") LIMIT 10`,
 		Namespace:  "articles",
 		Model:      "text-embedding-3-small",
 		Dimensions: 384,
@@ -81,7 +81,7 @@ func benchPublishVector(b *testing.B, dim int) {
 
 func BenchmarkLintEncode(b *testing.B) {
 	req := LintRequest{
-		Query:  `MATCH DISTANCE("machine learning") WITHIN `,
+		Query:  `MATCH DISTANCE("machine learning") AND `,
 		Cursor: 38,
 	}
 	b.ReportAllocs()
@@ -97,7 +97,7 @@ func BenchmarkLintEncode(b *testing.B) {
 
 func BenchmarkSubscribeEncode(b *testing.B) {
 	req := SubscribeRequest{
-		Query:      `MATCH DISTANCE("gpu shortage") WITHIN 0.5`,
+		Query:      `MATCH DISTANCE("gpu shortage")`,
 		Namespace:  "articles",
 		Model:      "text-embedding-3-small",
 		Dimensions: 384,

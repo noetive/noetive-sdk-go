@@ -27,7 +27,7 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	query := `MATCH DISTANCE("climate change") WITHIN `
+	query := `MATCH DISTANCE("climate change") AND `
 	res, err := c.Lint(ctx, semantik.LintRequest{
 		Query:  query,
 		Cursor: len(query),

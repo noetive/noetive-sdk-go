@@ -41,7 +41,7 @@ func TestForwardingSendsWhatItWasGiven(t *testing.T) {
 		// marks as needing no credential, so it would prove nothing about
 		// forwarding one.
 		if _, err := c.Search(t.Context(), semantik.SearchRequest{
-			Query:     `MATCH DISTANCE("x") WITHIN 0.4`,
+			Query:     `MATCH DISTANCE("x")`,
 			Namespace: "n", Model: "m", Dimensions: 1,
 		}); err != nil {
 			t.Fatalf("Search with %q: %v", header, err)

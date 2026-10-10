@@ -7,11 +7,15 @@
 //	if err != nil { log.Fatal(err) }
 //
 //	res, err := c.Search(ctx, semantik.SearchRequest{
-//	    Query:      `MATCH DISTANCE("machine learning") WITHIN 0.4 LIMIT 10`,
+//	    Query:      `MATCH DISTANCE("machine learning") LIMIT 10`,
 //	    Namespace:  "global",
 //	    Model:      "Qwen3-Embedding-4B",
 //	    Dimensions: 1024,
 //	})
+//
+// Semantik sets each query clause's relevance floor itself, so queries do
+// not carry a similarity threshold: a query with a WITHIN clause is refused.
+// To match less, make the anchor text more specific.
 //
 // Namespace, Model and Dimensions are REQUIRED on every publish, search
 // and subscribe — the SDK applies no defaults and rejects an unset field

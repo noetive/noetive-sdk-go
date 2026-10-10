@@ -48,7 +48,7 @@ func main() {
 	//
 	// Minimal request against the global namespace, which every account has.
 	_, err = c.Search(ctx, semantik.SearchRequest{
-		Query:      `MATCH DISTANCE("machine learning") WITHIN 0.4 LIMIT 5`,
+		Query:      `MATCH DISTANCE("machine learning") LIMIT 5`,
 		Namespace:  "global",
 		Model:      "Qwen3-Embedding-4B",
 		Dimensions: 1024,

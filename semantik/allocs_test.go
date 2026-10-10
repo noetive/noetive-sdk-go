@@ -17,7 +17,7 @@ import (
 func TestZeroAllocHot(t *testing.T) {
 	t.Run("SearchEncode", func(t *testing.T) {
 		req := SearchRequest{
-			Query:      `MATCH DISTANCE("x") WITHIN 0.4 LIMIT 10`,
+			Query:      `MATCH DISTANCE("x") LIMIT 10`,
 			Namespace:  "n",
 			Model:      "text-embedding-3-small",
 			Dimensions: 384,

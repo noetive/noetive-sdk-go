@@ -27,7 +27,7 @@ func TestSearch_HappyPath(t *testing.T) {
 		})
 	})
 	res, err := c.Search(t.Context(), SearchRequest{
-		Query: `MATCH DISTANCE("ml") WITHIN 0.4`, Namespace: "n", Model: "m", Dimensions: 384, Limit: 10,
+		Query: `MATCH DISTANCE("ml")`, Namespace: "n", Model: "m", Dimensions: 384, Limit: 10,
 	})
 	if err != nil {
 		t.Fatalf("Search: %v", err)

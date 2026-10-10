@@ -9,10 +9,10 @@
 // Usage:
 //
 //	recorder health
-//	recorder lint   "MATCH DISTANCE(\"x\") WITHIN 0.5"
+//	recorder lint   "MATCH DISTANCE(\"x\")"
 //	recorder publish [-ack durable] [-text "..."] [-vector 1,2,3,...]
-//	recorder search  "MATCH DISTANCE(\"transformer\") WITHIN 0.6 LIMIT 5"
-//	recorder subscribe [-wait 30s] "MATCH DISTANCE(\"x\") WITHIN 0.5"
+//	recorder search  "MATCH DISTANCE(\"transformer\") LIMIT 5"
+//	recorder subscribe [-wait 30s] "MATCH DISTANCE(\"x\")"
 //	recorder raw -method POST -path /v1/publish -body '{...}'
 //
 // All subcommands accept -url to override the base URL (default:

@@ -24,7 +24,7 @@ if err != nil { log.Fatal(err) }
 
 // Namespace, Model and Dimensions are required on every request.
 res, err := c.Search(context.Background(), semantik.SearchRequest{
-    Query:      `MATCH DISTANCE("machine learning research") WITHIN 0.4 LIMIT 10`,
+    Query:      `MATCH DISTANCE("machine learning research") LIMIT 10`,
     Namespace:  "global",
     Model:      "Qwen3-Embedding-4B",
     Dimensions: 1024,
@@ -117,7 +117,7 @@ arrives.
 
 ```go
 sub, err := c.Subscribe(ctx, semantik.SubscribeRequest{
-    Query:      `MATCH DISTANCE("gpu shortage") WITHIN 0.5`,
+    Query:      `MATCH DISTANCE("gpu shortage")`,
     Namespace:  "global",
     Model:      "Qwen3-Embedding-4B",
     Dimensions: 1024,

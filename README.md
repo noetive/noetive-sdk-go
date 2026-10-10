@@ -53,7 +53,7 @@ fmt.Println(pub.MessageID, pub.Epoch, pub.Seq)
 // Search. Use the response: ranked matches with score + metadata.
 res, _ := c.Search(ctx, semantik.SearchRequest{
 	Namespace: ns, Model: model, Dimensions: dims,
-	Query: `MATCH DISTANCE("gpu shortage") WITHIN 0.5 LIMIT 10`,
+	Query: `MATCH DISTANCE("gpu shortage") LIMIT 10`,
 })
 for _, m := range res.Results {
 	fmt.Println(m.MessageID, m.Score, m.Metadata["topic"], m.Content)
@@ -62,7 +62,7 @@ for _, m := range res.Results {
 // Subscribe. Use the response: stream matches as they arrive.
 sub, _ := c.Subscribe(ctx, semantik.SubscribeRequest{
 	Namespace: ns, Model: model, Dimensions: dims,
-	Query: `MATCH DISTANCE("gpu shortage") WITHIN 0.5`,
+	Query: `MATCH DISTANCE("gpu shortage")`,
 })
 defer sub.Close()
 fmt.Println(sub.ID())

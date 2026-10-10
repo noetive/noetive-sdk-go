@@ -14,7 +14,7 @@ import "context"
 // A minimal request against the shared "global" namespace is therefore:
 //
 //	req := semantik.SearchRequest{
-//	    Query:      `MATCH DISTANCE("machine learning") WITHIN 0.4 LIMIT 10`,
+//	    Query:      `MATCH DISTANCE("machine learning") LIMIT 10`,
 //	    Namespace:  "global",
 //	    Model:      "Qwen3-Embedding-4B",
 //	    Dimensions: 1024,

@@ -159,7 +159,7 @@ func FuzzRequestEncode(f *testing.F) {
 		`{"namespace":"n","model":"m","dimensions":3,"items":[{"text":"x"}],"idempotency_key":"k","ack":"durable","metadata":{"a":"b"}}`,
 		`{"namespace":"n","model":"m","dimensions":3,"items":[{"vector":[1,2,3,4,5,6,7,8,9,10]}],"ack":"stored"}`,
 		`{"query":"q","cursor":0}`,
-		`{"query":"MATCH DISTANCE(\"x\") WITHIN 0.4","cursor":5}`,
+		`{"query":"MATCH DISTANCE(\"x\") LIMIT 4","cursor":5}`,
 		`{"query":"q","namespace":"n","model":"m","dimensions":3,"limit":42}`,
 		`{"query":"sub query","namespace":"n","model":"m","dimensions":3}`,
 	}

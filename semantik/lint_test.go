@@ -20,10 +20,10 @@ func TestLint_HappyPath(t *testing.T) {
 		readJSON(t, r, &req)
 		writeJSON(t, w, http.StatusOK, LintResponse{
 			Valid:      true,
-			Normalized: `MATCH DISTANCE("x") WITHIN 0.4`,
+			Normalized: `MATCH DISTANCE("x")`,
 		})
 	})
-	res, err := c.Lint(t.Context(), LintRequest{Query: `MATCH DISTANCE("x") WITHIN 0.4`})
+	res, err := c.Lint(t.Context(), LintRequest{Query: `MATCH DISTANCE("x")`})
 	if err != nil {
 		t.Fatalf("Lint: %v", err)
 	}

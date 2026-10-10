@@ -37,7 +37,7 @@ func ExampleClient_Health() {
 func ExampleClient_Search() {
 	c, _ := semantik.New("keya_abc...")
 	res, err := c.Search(context.Background(), semantik.SearchRequest{
-		Query:      `MATCH DISTANCE("machine learning") WITHIN 0.4 LIMIT 10`,
+		Query:      `MATCH DISTANCE("machine learning") LIMIT 10`,
 		Namespace:  "global",
 		Model:      "Qwen3-Embedding-4B",
 		Dimensions: 1024,
@@ -69,7 +69,7 @@ func ExampleClient_Publish() {
 func ExampleClient_Lint() {
 	c, _ := semantik.New("keya_abc...")
 	res, err := c.Lint(context.Background(), semantik.LintRequest{
-		Query: `MATCH DISTANCE("machin") WITHIN `,
+		Query: `MATCH DISTANCE("machin") AND `,
 	})
 	if err != nil {
 		log.Fatal(err)
@@ -88,7 +88,7 @@ func ExampleClient_Subscribe() {
 	defer cancel()
 
 	sub, err := c.Subscribe(ctx, semantik.SubscribeRequest{
-		Query:      `MATCH DISTANCE("breaking news") WITHIN 0.3`,
+		Query:      `MATCH DISTANCE("breaking news")`,
 		Namespace:  "global",
 		Model:      "Qwen3-Embedding-4B",
 		Dimensions: 1024,

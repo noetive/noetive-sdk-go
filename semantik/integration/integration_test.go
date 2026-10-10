@@ -32,7 +32,7 @@ func TestLint_Valid(t *testing.T) {
 	defer cancel()
 	start := time.Now()
 	res, err := c.Lint(ctx, semantik.LintRequest{
-		Query: `MATCH DISTANCE("machine learning") WITHIN 0.4 LIMIT 5`,
+		Query: `MATCH DISTANCE("machine learning") LIMIT 5`,
 	})
 	logElapsed(t, "Lint (valid)", start)
 	if err != nil {
@@ -52,7 +52,7 @@ func TestLint_Invalid(t *testing.T) {
 	defer cancel()
 	start := time.Now()
 	res, err := c.Lint(ctx, semantik.LintRequest{
-		Query: `MATCH DISTANCE("x") WITHIN not-a-number`,
+		Query: `MATCH DISTANCE("x"`,
 	})
 	logElapsed(t, "Lint (invalid)", start)
 	if err != nil {
@@ -293,7 +293,7 @@ func TestSearch_TextQuery(t *testing.T) {
 	defer cancel2()
 	start := time.Now()
 	res, err := c.Search(searchCtx, semantik.SearchRequest{
-		Query:      `MATCH DISTANCE("transformer architecture") WITHIN 0.6 LIMIT 5`,
+		Query:      `MATCH DISTANCE("transformer architecture") LIMIT 5`,
 		Namespace:  testNamespace,
 		Model:      testModel,
 		Dimensions: testDims,
@@ -334,7 +334,7 @@ func TestSearch_LimitClause(t *testing.T) {
 	defer cancel2()
 	start := time.Now()
 	res, err := c.Search(searchCtx, semantik.SearchRequest{
-		Query:      `MATCH DISTANCE("doc") WITHIN 0.99`,
+		Query:      `MATCH DISTANCE("doc")`,
 		Namespace:  testNamespace,
 		Model:      testModel,
 		Dimensions: testDims,
@@ -356,7 +356,7 @@ func TestSubscribe_RoundTrip(t *testing.T) {
 
 	start := time.Now()
 	sub, err := c.Subscribe(subCtx, semantik.SubscribeRequest{
-		Query:      `MATCH DISTANCE("mechanical engineering") WITHIN 0.6`,
+		Query:      `MATCH DISTANCE("mechanical engineering")`,
 		Namespace:  testNamespace,
 		Model:      testModel,
 		Dimensions: testDims,
@@ -405,7 +405,7 @@ func TestSubscribe_ContextCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	start := time.Now()
 	sub, err := c.Subscribe(ctx, semantik.SubscribeRequest{
-		Query:      `MATCH DISTANCE("x") WITHIN 0.5`,
+		Query:      `MATCH DISTANCE("x")`,
 		Namespace:  testNamespace,
 		Model:      testModel,
 		Dimensions: testDims,
@@ -441,7 +441,7 @@ func TestSubscribe_CloseIdempotent(t *testing.T) {
 	defer cancel()
 	start := time.Now()
 	sub, err := c.Subscribe(ctx, semantik.SubscribeRequest{
-		Query:      `MATCH DISTANCE("x") WITHIN 0.5`,
+		Query:      `MATCH DISTANCE("x")`,
 		Namespace:  testNamespace,
 		Model:      testModel,
 		Dimensions: testDims,
@@ -489,7 +489,7 @@ func TestSubscribe_MultiMessageDelivery(t *testing.T) {
 
 	subStart := time.Now()
 	sub, err := c.Subscribe(subCtx, semantik.SubscribeRequest{
-		Query:      `MATCH DISTANCE("distributed consensus protocols") WITHIN 0.7`,
+		Query:      `MATCH DISTANCE("distributed consensus protocols")`,
 		Namespace:  testNamespace,
 		Model:      testModel,
 		Dimensions: testDims,
@@ -585,7 +585,7 @@ func TestSubscribe_EOFOnClose(t *testing.T) {
 	defer cancel()
 	start := time.Now()
 	sub, err := c.Subscribe(ctx, semantik.SubscribeRequest{
-		Query:      `MATCH DISTANCE("x") WITHIN 0.5`,
+		Query:      `MATCH DISTANCE("x")`,
 		Namespace:  testNamespace,
 		Model:      testModel,
 		Dimensions: testDims,

@@ -63,7 +63,7 @@ func demo(c *semantik.Client, label string) {
 	defer cancel()
 
 	_, err := c.Search(ctx, semantik.SearchRequest{
-		Query:      `MATCH DISTANCE("hello world") WITHIN 0.5 LIMIT 1`,
+		Query:      `MATCH DISTANCE("hello world") LIMIT 1`,
 		Namespace:  "global",
 		Model:      "Qwen3-Embedding-4B",
 		Dimensions: 1024,

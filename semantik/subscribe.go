@@ -26,7 +26,7 @@ import (
 // A minimal subscription against the shared "global" namespace is:
 //
 //	req := semantik.SubscribeRequest{
-//	    Query:      `MATCH DISTANCE("gpu shortage") WITHIN 0.5`,
+//	    Query:      `MATCH DISTANCE("gpu shortage")`,
 //	    Namespace:  "global",
 //	    Model:      "Qwen3-Embedding-4B",
 //	    Dimensions: 1024,

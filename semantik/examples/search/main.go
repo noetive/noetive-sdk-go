@@ -28,7 +28,7 @@ func main() {
 	// Namespace, Model and Dimensions are required on every request;
 	// the SDK applies no defaults.
 	res, err := c.Search(ctx, semantik.SearchRequest{
-		Query:      `MATCH DISTANCE("machine learning research") WITHIN 0.4 LIMIT 10`,
+		Query:      `MATCH DISTANCE("machine learning research") LIMIT 10`,
 		Namespace:  "global",
 		Model:      "Qwen3-Embedding-4B",
 		Dimensions: 1024,
