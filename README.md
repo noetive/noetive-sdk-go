@@ -72,7 +72,8 @@ for ev := range sub.Events(ctx) {
 ```
 
 For error handling, retry tuning and runnable single-purpose programs,
-see the [Semantik package README](semantik/README.md).
+see the [Semantik package README](semantik/README.md). Set `IncludeVector` on a
+search or subscription to receive each match's stored embedding.
 
 </details>
 

@@ -527,6 +527,10 @@ func FuzzSearchResponseDecode(f *testing.F) {
 		`{"results":[{"message_id":"m","namespace":"global","content":"x","score":0.5}]}`,
 		`{"results":null}`,
 		`{"results":[{"score":"not-a-number"}]}`,
+		`{"results":[{"message_id":"m","score":0.5,"vector":[0.1,-0.2,3e-3]}],"truncated":true}`,
+		`{"results":[{"vector":null}],"truncated":false}`,
+		`{"results":[{"vector":[1e40]}]}`,
+		`{"results":[{"vector":"x"}],"truncated":"yes"}`,
 	}
 	for _, s := range seeds {
 		f.Add([]byte(s))
@@ -613,6 +617,11 @@ func FuzzMatchEventDecode(f *testing.F) {
 		`{"score":1e-50}`,   // underflows to 0
 		`{"message_id":null}`,
 		`{"score":"not-a-number"}`,
+		`{"message_id":"m","score":0.9,"seq":42,"vector":[0.1,-0.2]}`,
+		`{"message_id":"m","seq":18446744073709551615}`,
+		`{"message_id":"m","seq":-1}`,
+		`{"message_id":"m","vector":null,"seq":null}`,
+		`{"vector":[1e40,"x"]}`,
 	}
 	for _, s := range seeds {
 		f.Add([]byte(s))
@@ -793,7 +802,7 @@ func FuzzSubscribeStream(f *testing.F) {
 			ev, err := sub.Next(ctx)
 			if err != nil {
 				// Property: an error never accompanies a value.
-				if ev != (MatchEvent{}) {
+				if !reflect.DeepEqual(ev, MatchEvent{}) {
 					t.Fatalf("non-zero event %+v returned with error %v", ev, err)
 				}
 				// Property: a terminal error is either a clean io.EOF or a
@@ -807,7 +816,7 @@ func FuzzSubscribeStream(f *testing.F) {
 				if err2 != err {
 					t.Fatalf("sticky-error violated: first %v then %v", err, err2)
 				}
-				if ev2 != (MatchEvent{}) {
+				if !reflect.DeepEqual(ev2, MatchEvent{}) {
 					t.Fatalf("non-zero event %+v on sticky-error read", ev2)
 				}
 				break
@@ -826,7 +835,7 @@ func FuzzSubscribeStream(f *testing.F) {
 // decoder fuzzer bypasses by calling safeUnmarshal directly. The
 // contract under test is panic-safety, not decode success: decode
 // errors are expected and ignored. The oversize branch forces input
-// past the 1 MiB cap so the truncation point is exercised.
+// past the 9 MiB cap so the truncation point is exercised.
 //
 // MUST NOT be run with -race (crafted JSON through gojson; see
 // safejson.go).
@@ -846,10 +855,10 @@ func FuzzSafeDecodeReader(f *testing.F) {
 		_ = safeDecode(bytes.NewReader(body), new(SearchResponse))
 		_ = safeDecode(bytes.NewReader(body), new(PublishResponse))
 		_ = safeDecode(bytes.NewReader(body), new(LintResponse))
-		// Straddle the maxResponseBytes (1 MiB) cap so the truncation
+		// Straddle the maxResponseBytes (9 MiB) cap so the truncation
 		// path is reached. Errors are fine; a panic is not. Gate to
 		// small seeds and slice to just past the cap: crossing the
-		// boundary needs ~1 MiB, but ballooning further (or repeating a
+		// boundary needs ~9 MiB, but ballooning further (or repeating a
 		// large body) only burns fuzz time without testing anything new.
 		if n := len(body); n > 0 && n <= 4096 {
 			big := bytes.Repeat(body, maxResponseBytes/n+2)

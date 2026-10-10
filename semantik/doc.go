@@ -72,4 +72,13 @@
 // For a grouped subscription, [MatchEvent.Lead] reports how far ahead
 // the delivery was; it is nil when no other member matched, and a
 // non-nil 0 means a tie.
+//
+// # Stored vectors
+//
+// Set IncludeVector on [SearchRequest] or [SubscribeRequest] to receive
+// each match's stored embedding in [ResultItem.Vector] or
+// [MatchEvent.Vector]. A search then returns at most 50 results, and
+// [SearchResponse.Truncated] reports a page cut short to fit the
+// response size cap. [MatchEvent.Seq] lets a consumer recognise a
+// message it has already seen; it is not an ordering.
 package semantik

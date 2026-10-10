@@ -22,10 +22,12 @@ import (
 
 // MaxFrameBytes is the largest single SSE frame (event + data lines) a
 // [NewScanner] will accumulate before returning ErrFrameTooLarge.
-// 64 KiB is an order of magnitude larger than any Semantik event; a
+// 128 KiB admits the largest Semantik event: a match frame carrying a
+// 4096-dimension vector whose components encode at their longest (about
+// 94 KB; a typical embedding is about 55 KB). A
 // stream whose frames batch many events sets its own bound with
 // [NewScannerLimit].
-const MaxFrameBytes = 64 * 1024
+const MaxFrameBytes = 128 * 1024
 
 // initialBufSize is the starting line-buffer size handed to
 // bufio.Scanner. 4 KiB is comfortably larger than any subscribed or

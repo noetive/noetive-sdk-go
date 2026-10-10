@@ -181,6 +181,20 @@ for ev, err := range sub.Events(ctx) {
 `MatchEvent.Lead` is a pointer so that "absent" (uncontested or
 ungrouped) differs from `0` (a tie).
 
+### Stored vectors
+
+Set `IncludeVector` on a `SearchRequest` or `SubscribeRequest` to receive
+each matched message's stored embedding in `ResultItem.Vector` or
+`MatchEvent.Vector`; it is nil otherwise. With it on, a search returns at
+most 50 results (a larger `Limit` is clamped, not rejected), and each vector
+adds roughly `Dimensions` x 13 bytes of JSON. A search page that had to be
+cut short to fit the 8 MiB response cap sets `SearchResponse.Truncated`:
+the results returned are the best-ranked, and the dropped ones cannot be
+paged to, so lower `Limit` or narrow the query. A stored vector is readable
+by anyone who can reach the namespace, like content and metadata.
+`MatchEvent.Seq` identifies the matched message for de-duplication; it is not
+a namespace-wide ordering and matches do not arrive in `Seq` order.
+
 ## Examples
 
 Every example under `examples/` is a self-contained `main` program

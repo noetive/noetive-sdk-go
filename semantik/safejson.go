@@ -32,10 +32,10 @@ func safeUnmarshal(data []byte, v any) (err error) {
 	return gojson.Unmarshal(data, v)
 }
 
-// safeDecode drains r (capped at [maxResponseBytes], 1 MiB) and
-// delegates to [safeUnmarshal]. The cap is larger than any legitimate
-// 2xx Semantik response body the SDK parses (PublishResponse,
-// SearchResponse with a reasonable result set). It is independent of
+// safeDecode drains r (capped at [maxResponseBytes], 9 MiB) and
+// delegates to [safeUnmarshal]. The cap sits just above the server's own
+// 8 MiB response size cap, so it admits any legitimate 2xx Semantik response
+// body, including a search page of 50 results with 4096-dim vectors. It is independent of
 // [decodeError]'s tighter 64 KiB error-body cap — error envelopes are
 // far smaller than a full search payload.
 func safeDecode(r io.Reader, v any) error {
@@ -46,7 +46,8 @@ func safeDecode(r io.Reader, v any) error {
 	return safeUnmarshal(data, v)
 }
 
-// maxResponseBytes caps response body reads. Aligned with
-// [MaxSearchBodyBytes] so the decode cap tracks the request-body cap
-// on the wire — the two are the same by design.
-const maxResponseBytes = MaxSearchBodyBytes
+// maxResponseBytes caps response body reads. It sits 1 MiB above the
+// server's 8 MiB response cap, so a page at the boundary is never refused;
+// it is independent of [MaxSearchBodyBytes], which
+// limits the request body.
+const maxResponseBytes = 9 * 1024 * 1024

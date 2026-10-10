@@ -56,13 +56,20 @@ import (
 //	    Group:      "pandemic-roles",
 //	}
 //
-// Field ordering: strings (16 B each) > uint16 (2 B).
+// Set IncludeVector to have every match event carry the matched message's
+// stored embedding in [MatchEvent.Vector]. It is fixed for the life of the
+// stream. Each frame grows by roughly Dimensions x 13 bytes. A stored vector
+// is readable by anyone who can reach the namespace, like content and
+// metadata.
+//
+// Field ordering: strings (16 B each) > uint16 (2 B) > bool (1 B).
 type SubscribeRequest struct {
-	Query      string `json:"query"`
-	Namespace  string `json:"namespace"`
-	Model      string `json:"model"`
-	Group      string `json:"group,omitempty"`
-	Dimensions uint16 `json:"dimensions"`
+	Query         string `json:"query"`
+	Namespace     string `json:"namespace"`
+	Model         string `json:"model"`
+	Group         string `json:"group,omitempty"`
+	Dimensions    uint16 `json:"dimensions"`
+	IncludeVector bool   `json:"include_vector,omitempty"`
 }
 
 // SubscribedEvent is the payload of the first SSE frame, delivered
@@ -80,11 +87,21 @@ type SubscribedEvent struct {
 // subscription is ungrouped; a non-nil 0 means an exact tie with another
 // member. Dereference only after checking for nil.
 //
-// Field ordering: string (16 B) > pointer (8 B) > float32 (4 B).
+// Seq is the matched message's sequence number, with the same caveats as
+// [PublishResponse.Seq]: it is not a namespace-wide ordering and matches
+// are not delivered in Seq order. Use it to recognise a message you have
+// already seen, not to sort.
+//
+// Vector is the matched message's stored embedding, present only when the
+// subscription set [SubscribeRequest.IncludeVector]; otherwise nil.
+//
+// Field ordering: slice (24 B) > string (16 B) > uint64/pointer (8 B) > float32 (4 B).
 type MatchEvent struct {
-	MessageID string   `json:"message_id"`
-	Lead      *float32 `json:"lead,omitempty"`
-	Score     float32  `json:"score"`
+	Vector    []float32 `json:"vector,omitempty"`
+	MessageID string    `json:"message_id"`
+	Seq       uint64    `json:"seq,omitempty"`
+	Lead      *float32  `json:"lead,omitempty"`
+	Score     float32   `json:"score"`
 }
 
 // Subscription is a live SSE match stream. It is safe to call [Close]
