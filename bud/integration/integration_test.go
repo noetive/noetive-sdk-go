@@ -229,7 +229,7 @@ func TestAWatchOpensAtACursor(t *testing.T) {
 func TestRefusalsCarryWhatToDoNext(t *testing.T) {
 	c, me := setup(t)
 
-	missing, err := c.DescribeMessage(callContext(t), bud.ByID{ID: "message_01aaaaaaaaaaaaaaaaaaaaaaaaaa"})
+	missing, err := c.DescribeMessage(callContext(t), bud.ByID{ID: "message_01aaaaaaaaaaaaaaaaaaaaaaaa"})
 	refused(t, "DescribeMessage of a message that does not exist", err, missing.Error, bud.CodeNotFound)
 
 	folder, err := c.ListFolder(callContext(t), bud.In{In: me.Mailbox, Folder: "no-such-folder"})
@@ -242,7 +242,7 @@ func TestRefusalsCarryWhatToDoNext(t *testing.T) {
 	// Refused before anything is queued: an attachment is not served.
 	attach, err := c.Send(callContext(t), bud.SendInput{
 		To: to[:1], Subject: "integration: refused", Text: "never sent",
-		Attach: []string{"message_01aaaaaaaaaaaaaaaaaaaaaaaaaa/part/2"}, IdempotencyKey: "integration-refused-attach",
+		Attach: []string{"message_01aaaaaaaaaaaaaaaaaaaaaaaa/part/2"}, IdempotencyKey: "integration-refused-attach",
 	})
 	refused(t, "Send with an attachment", err, attach.Error, bud.CodeInvalid)
 	if attach.Error.Field != "/attach" {
