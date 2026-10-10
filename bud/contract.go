@@ -3,6 +3,7 @@ package bud
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"reflect"
 	"sort"
 	"strings"
@@ -164,12 +165,16 @@ func jsonName(f reflect.StructField) (name string, omitempty bool) {
 // byte slice. Those are precisely the two the server's own schemas had to work
 // around, and describing them wrongly here would certify agreement between two
 // sides that do not agree.
+//
+// A raw JSON field is recognised by type identity, not by name: since Go 1.27,
+// json.RawMessage is an alias of jsontext.Value, so its name is "Value" there
+// and "RawMessage" before. The type itself is the same on every release.
 func wireKind(t reflect.Type) string {
 	switch {
 	case t.Kind() == reflect.Pointer:
 		return wireKind(t.Elem())
 
-	case t.Name() == "RawMessage":
+	case t == reflect.TypeFor[json.RawMessage]():
 		return "json"
 
 	case implementsTextMarshaler(t):
