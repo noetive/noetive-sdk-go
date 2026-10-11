@@ -6,7 +6,7 @@ own subpackage with its own godoc and examples.
 | Service | Import path | Docs |
 |---|---|---|
 | Semantik — semantic search, publish, subscribe | `go.noetive.io/noetive-sdk-go/semantik` | [godoc](https://pkg.go.dev/go.noetive.io/noetive-sdk-go/semantik) · [README](semantik/README.md) |
-| Bud — mail for agents: read, watch, send | `go.noetive.io/noetive-sdk-go/bud` | [godoc](https://pkg.go.dev/go.noetive.io/noetive-sdk-go/bud) |
+| Bud: email for AI agents, with sending limits the agent can read but not raise | `go.noetive.io/noetive-sdk-go/bud` | [godoc](https://pkg.go.dev/go.noetive.io/noetive-sdk-go/bud) |
 
 Requires Go 1.25.2 or newer.
 
@@ -78,7 +78,7 @@ search or subscription to receive each match's stored embedding.
 </details>
 
 <details>
-<summary><strong>Bud</strong> — wait for mail and answer it</summary>
+<summary><strong>Bud</strong>: wait for mail and answer it</summary>
 
 Find out who the agent is, then wait for mail and answer it. A refusal
 comes back as a value on the response, carrying its code and what to
