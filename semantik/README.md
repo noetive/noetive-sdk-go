@@ -132,13 +132,36 @@ for ev, err := range sub.Events(ctx) {
 }
 ```
 
+`Events` ends on any error, including a reported gap. Always range with
+both values: `for ev := range sub.Events(ctx)` cannot see the error, so
+on a gap its body runs once with an empty event and then stops. To keep
+reading past a gap, loop on `Next`:
+
+```go
+for {
+    ev, err := sub.Next(ctx)
+    var missed *semantik.MissedMatchesError
+    if errors.As(err, &missed) {
+        catchUp(missed.Count) // search with the same query
+        continue
+    }
+    if err != nil { break }
+    handle(ev)
+}
+```
+
 Notes:
 
 - `Close` is idempotent and safe to call from any goroutine.
-- The public API does **not** send heartbeats. If your network path
-  has proxies that reap idle connections, wrap each `Next` call in
-  `context.WithTimeout` or accept that the stream ends silently on
-  reaper-induced TCP RST.
+- The server sends keepalive comments on an idle stream; the SDK skips
+  them.
+- If you read more slowly than matches arrive, the server cannot deliver
+  some of them. `Next` then returns `*MissedMatchesError` with the count
+  and the stream carries on. It is the one error that does not end the
+  stream: handle it with `errors.As` and `continue`, and search with the
+  same query to recover what was missed. Do not reconnect on it; the
+  stream is healthy. A loop that stops on any error stops here too, which
+  is the safe default, and `Events` ends here for the same reason.
 - The handshake (POST → first `subscribed` frame) is covered by the
   configured retry policy: short transient pushback on setup is
   ridden out automatically because each handshake either succeeds
@@ -207,7 +230,7 @@ you can run against a live server with a real API key.
 | [`search`](examples/search/main.go) | SemQL text-anchor search |
 | [`publish_text`](examples/publish_text/main.go) | Text publish, `ack=stored` |
 | [`publish_vector`](examples/publish_vector/main.go) | Vector publish, `ack=durable`, idempotency key, retry policy |
-| [`subscribe`](examples/subscribe/main.go) | Live SSE match stream using `iter.Seq2` |
+| [`subscribe`](examples/subscribe/main.go) | Live SSE match stream that reads on past a reported gap |
 | [`errors`](examples/errors/main.go) | Idiomatic error inspection (`errors.Is`, `errors.As`, pre-flight vs server) |
 
 Run any of them from the module root with:

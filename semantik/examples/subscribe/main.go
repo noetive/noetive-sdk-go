@@ -1,6 +1,6 @@
 // Command subscribe opens an SSE match stream for a SemQL query
 // against the "global" namespace and prints match events as they
-// arrive. Uses the Go 1.23+ range-over-func iterator.
+// arrive. A reported gap is logged and the stream read on.
 //
 // Usage:
 //
@@ -11,6 +11,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -49,7 +50,13 @@ func main() {
 
 	log.Printf("subscribed: %s", sub.ID())
 
-	for ev, err := range sub.Events(ctx) {
+	for {
+		ev, err := sub.Next(ctx)
+		var missed *semantik.MissedMatchesError
+		if errors.As(err, &missed) {
+			log.Printf("missed %d matches; search with the same query to catch up", missed.Count)
+			continue
+		}
 		if err != nil {
 			log.Printf("stream ended: %v", err)
 			return

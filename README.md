@@ -66,7 +66,10 @@ sub, _ := c.Subscribe(ctx, semantik.SubscribeRequest{
 })
 defer sub.Close()
 fmt.Println(sub.ID())
-for ev := range sub.Events(ctx) {
+for ev, err := range sub.Events(ctx) {
+	if err != nil {
+		break // any error ends this loop, including a reported gap; search to catch up
+	}
 	fmt.Println(ev.MessageID, ev.Score)
 }
 ```

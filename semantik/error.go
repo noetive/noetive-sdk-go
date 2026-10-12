@@ -300,6 +300,46 @@ func (e *SubscribeSetupError) Unwrap() error {
 	return nil
 }
 
+// MissedMatchesError is returned from [Subscription.Next] when the server
+// reports that Count matches were not delivered because this subscriber read
+// more slowly than they arrived.
+//
+// Unlike every other error from Next it is not terminal: the stream stays open
+// and the next call to Next continues the stream. The report can arrive ahead of
+// matches that were already queued, so it says how many were missed, not where. It is an error
+// rather than a field so that a loop which stops on any error stops here too,
+// instead of carrying on unaware of the gap. A caller that can tolerate the gap
+// checks for it and keeps reading:
+//
+//	ev, err := sub.Next(ctx)
+//	var missed *semantik.MissedMatchesError
+//	if errors.As(err, &missed) {
+//	    catchUp(missed.Count) // search with the subscription's query
+//	    continue
+//	}
+//
+// The server does not say which messages were missed. Search the namespace
+// with the subscription's query to recover them, and dedupe on
+// [MatchEvent.MessageID]: the search can return matches Next also delivers.
+type MissedMatchesError struct {
+	Count uint64
+}
+
+// Error implements the error interface.
+func (e *MissedMatchesError) Error() string {
+	if e == nil {
+		return "<nil>"
+	}
+	// Deliberately not the "subscribe stream:" prefix SubscribeStreamError
+	// uses, so a log search for stream failures does not count a gap as one.
+	noun := " matches"
+	if e.Count == 1 {
+		noun = " match"
+	}
+	return "semantik: subscription missed " + strconv.FormatUint(e.Count, 10) + noun +
+		" because it fell behind; the stream continues"
+}
+
 // SubscribeStreamError is returned from [Subscription.Next] when the
 // SSE stream drops or yields a malformed frame *after* the
 // "subscribed" event has been delivered.

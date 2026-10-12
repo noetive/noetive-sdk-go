@@ -60,9 +60,12 @@
 // "subscribed" frame is consumed inside Subscribe so that
 // [Subscription.ID] is populated on return; subsequent "match" frames
 // surface through [Subscription.Next] or the range-over-func adapter
-// [Subscription.Events]. The public API does not send heartbeats, so
-// callers behind idle-connection-reaping proxies should bound each read
-// with [context.WithTimeout].
+// [Subscription.Events]. The server sends keepalive comments on an idle
+// stream, which the SDK skips. When the subscriber falls behind and the
+// server cannot deliver some matches, Next returns a [*MissedMatchesError]
+// with the count and the stream continues; search with the same query to
+// recover what was missed, deduping on MessageID. [Subscription.Events] ends
+// at a gap, as at any error, so loop on Next to read on.
 //
 // # Message groups
 //

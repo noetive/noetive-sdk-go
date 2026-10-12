@@ -141,6 +141,12 @@ func (s *Subscription) ID() string { return s.id }
 // Callers that want to reconnect must do so explicitly and dedupe
 // on [MatchEvent.MessageID].
 //
+// [*MissedMatchesError] is the one non-terminal error: the server
+// reported matches this subscriber fell too far behind to receive, and
+// the next call to Next continues the stream. Do not reconnect on it;
+// the stream is healthy, and a reconnect only widens the gap. Every
+// other error ends the stream.
+//
 // [io.EOF] (a clean server close) and [context.Canceled] /
 // [context.DeadlineExceeded] surface unchanged so existing
 // [errors.Is] checks against them keep working.
@@ -166,6 +172,9 @@ func (s *Subscription) Next(ctx context.Context) (MatchEvent, error) {
 			return MatchEvent{}, io.EOF
 		}
 		f := s.scanner.Frame()
+		if f.Event == "missed" {
+			return MatchEvent{}, s.missed(f.Data)
+		}
 		if f.Event != "match" {
 			// Skip unknown event types rather than failing — forward-compat.
 			continue
@@ -178,6 +187,25 @@ func (s *Subscription) Next(ctx context.Context) (MatchEvent, error) {
 		}
 		return ev, nil
 	}
+}
+
+// missed decodes a "missed" frame into the non-terminal
+// [*MissedMatchesError]. A frame without a positive count breaks the
+// contract, so it ends the stream as malformed rather than being passed
+// on as a gap of nothing.
+func (s *Subscription) missed(data string) error {
+	var m struct {
+		Count uint64 `json:"count"`
+	}
+	err := safeUnmarshal([]byte(data), &m)
+	if err == nil && m.Count == 0 {
+		err = errors.New("missed frame without a positive count")
+	}
+	if err != nil {
+		s.err = wrapSubscribeStreamError(&MalformedSSEError{Err: err})
+		return s.err
+	}
+	return &MissedMatchesError{Count: m.Count}
 }
 
 // wrapSubscribeStreamError converts a raw mid-stream error into a
@@ -205,7 +233,16 @@ func wrapSubscribeStreamError(err error) error {
 // Events adapts Next into a range-over-func iterator. Callers MUST
 // still invoke [Subscription.Close] — breaking out of the loop does
 // not release the underlying HTTP connection on its own. When yield
-// receives a non-nil error, subsequent iterations return immediately.
+// receives a non-nil error, iteration ends.
+//
+// That includes a [*MissedMatchesError], even though the stream itself is
+// still healthy, so a gap stops the loop rather than being passed over.
+// To read on after a gap, call Events again, or loop on
+// [Subscription.Next] directly.
+//
+// Always range with both values. The form `for ev := range sub.Events(ctx)`
+// cannot see the error: on any error, a gap included, its body runs once
+// with a zero MatchEvent and the loop then stops without saying why.
 //
 // Usage:
 //
