@@ -19,7 +19,9 @@
 // # Authentication
 //
 // Requests carry a Noetive key as Authorization: Bearer <key>; one key
-// reaches every Noetive service. [NewFromEnv] reads NOETIVE_KEY_SECRET
+// reaches every Noetive service. An access token the Noetive access service
+// signed works in its place; its scope can narrow what the agent may do and
+// never widen it. [NewFromEnv] reads NOETIVE_KEY_SECRET
 // (required) and NOETIVE_BUD_BASE_URL (optional, defaults to
 // https://bud.noetive.io). A relay that passes each caller's own credential
 // through uses [Forwarding] and [WithAuthorizationContext] instead.
@@ -56,5 +58,6 @@
 //
 // Pass an IdempotencyKey on every [Client.Send]: a repeat with the same key
 // returns the first send's result instead of sending again, and this package
-// never retries a send without one.
+// never retries a send without one. A send that comes back [StateHeld] is
+// waiting for a person to approve it: do not send it again.
 package bud

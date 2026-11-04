@@ -29,7 +29,11 @@ const (
 	// StateFailed means it could not be handed on. Reason says why.
 	StateFailed = "failed"
 
-	// StateHeld and StateRejected can appear on older messages. Nothing is held.
+	// StateHeld means a rule of the workspace's policy needs a person to approve
+	// the message before it goes; SendOutput.ApprovalID names the approval. It
+	// becomes StateQueued when approved and StateRejected when a person refuses
+	// it or the wait lapses. Nothing a caller sends releases it, so never send it
+	// again: that is a second message, held in its turn.
 	StateHeld     = "held"
 	StateRejected = "rejected"
 )
@@ -41,9 +45,14 @@ const (
 	EventReceived    = "mail.received"
 	EventQuarantined = "mail.quarantined"
 
-	// These follow a send: accepted, handed to the provider, accepted by the
-	// receiving side, refused for good, reported as unwanted.
+	// These follow a send: accepted, held for a person, released by a person,
+	// refused or lapsed while held (the sending budget is given back), handed to
+	// the provider, accepted by the receiving side, refused for good, reported as
+	// unwanted.
 	EventQueued     = "mail.queued"
+	EventHeld       = "mail.held"
+	EventApproved   = "mail.approved"
+	EventRejected   = "mail.rejected"
 	EventSent       = "mail.sent"
 	EventDelivered  = "mail.delivered"
 	EventBounced    = "mail.bounced"
@@ -141,7 +150,7 @@ const (
 // can never be mistaken for a mailbox one. Exposed so a caller can check a string
 // it was given before spending a round trip on it.
 const (
-	PrefixTenant = "tenant_"
+	PrefixWorkspace = "workspace_"
 
 	// PrefixAgent is an agent's identifier, and its mailbox's: an agent and the
 	// mailbox it reads and sends from are one identifier, not two, so there is

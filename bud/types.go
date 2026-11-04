@@ -82,9 +82,9 @@ type Provenance struct {
 	// Aligned is the one to branch on: the authenticated domain and the visible
 	// From agree. SPF passing on its own says only that somebody was allowed to
 	// send from that server.
-	Aligned  bool `json:"aligned"`
-	InTenant bool `json:"in_tenant"`
-	Known    bool `json:"known"`
+	Aligned     bool `json:"aligned"`
+	InWorkspace bool `json:"in_workspace"`
+	Known       bool `json:"known"`
 
 	// ThreadJoin is how the message joined its conversation: JoinNew,
 	// JoinVerified, or JoinClaimed for one that only claims to be a reply.
@@ -143,8 +143,11 @@ type SendInput struct {
 
 	From string `json:"from,omitempty"`
 
-	// OnBehalfOf writes as another agent. It needs a grant, and this server
-	// refuses it: nothing here can confirm a person decided that message.
+	// OnBehalfOf writes as another agent. It needs a send-on-behalf grant from
+	// that agent's owner, the organization's permission to send on behalf, and
+	// a From domain verified for the workspace; without all three the send is
+	// refused as policy_refused. The message names both, with the sending agent
+	// as Sender, so a recipient sees who wrote it and who it is from.
 	OnBehalfOf string `json:"on_behalf_of,omitempty"`
 
 	InReplyTo string `json:"in_reply_to,omitempty"`
@@ -175,6 +178,11 @@ type SendOutput struct {
 	Thread  string `json:"thread,omitempty"`
 
 	State string `json:"state,omitempty"`
+
+	// ApprovalID is the approval a StateHeld message waits on. Absent until the
+	// request for approval has been filed, which happens in the background; the
+	// message is held either way, and only a person can release it.
+	ApprovalID string `json:"approval_id,omitempty"`
 
 	// Reason says why a queued message waits instead of going now —
 	// "provisioning" while the sender's domain is verified, or "paused" — and,
@@ -232,9 +240,9 @@ func (o WaitOutput) Empty() bool { return o.Error == nil && len(o.Events) == 0 }
 
 // JournalEvent is one thing that happened.
 type JournalEvent struct {
-	ID     string    `json:"id"`
-	Tenant string    `json:"tenant"`
-	At     time.Time `json:"ts"`
+	ID        string    `json:"id"`
+	Workspace string    `json:"workspace"`
+	At        time.Time `json:"ts"`
 
 	// Seq orders events within a mailbox. Delivery is at-least-once, so dedupe
 	// on ID rather than assuming each event arrives once.
@@ -270,11 +278,11 @@ type Actor struct {
 // field here is also a field somebody else chose, so it is summary rather than
 // content.
 type EventData struct {
-	From     string `json:"from,omitempty"`
-	Subject  string `json:"subject,omitempty"`
-	Aligned  bool   `json:"aligned,omitempty"`
-	InTenant bool   `json:"in_tenant,omitempty"`
-	Known    bool   `json:"known,omitempty"`
+	From        string `json:"from,omitempty"`
+	Subject     string `json:"subject,omitempty"`
+	Aligned     bool   `json:"aligned,omitempty"`
+	InWorkspace bool   `json:"in_workspace,omitempty"`
+	Known       bool   `json:"known,omitempty"`
 
 	AgentPart bool   `json:"agent_part,omitempty"`
 	Folder    string `json:"folder,omitempty"`
@@ -299,10 +307,10 @@ type EventData struct {
 // The first call worth making. Every other reference needs an identifier, and
 // this is where they come from.
 type Me struct {
-	Agent  string `json:"agent"`
-	Tenant string `json:"tenant"`
-	Kind   string `json:"kind,omitempty"`
-	Name   string `json:"name,omitempty"`
+	Agent     string `json:"agent"`
+	Workspace string `json:"workspace"`
+	Kind      string `json:"kind,omitempty"`
+	Name      string `json:"name,omitempty"`
 
 	// Addresses are what this agent sends as. The first is the default.
 	Addresses []string `json:"addresses,omitempty"`
@@ -347,10 +355,10 @@ type Summary struct {
 	FromName string `json:"from_name,omitempty"`
 
 	// The provenance to triage on without opening anything.
-	Aligned  bool   `json:"aligned"`
-	InTenant bool   `json:"in_tenant"`
-	Known    bool   `json:"known"`
-	Join     string `json:"join,omitempty"`
+	Aligned     bool   `json:"aligned"`
+	InWorkspace bool   `json:"in_workspace"`
+	Known       bool   `json:"known"`
+	Join        string `json:"join,omitempty"`
 
 	Attachments int `json:"attachments,omitempty"`
 
@@ -384,6 +392,9 @@ type SendingStatus struct {
 // Content for KindMailbox.
 type MailboxView struct {
 	Mailbox string `json:"mailbox"`
+
+	// Addresses are what this mailbox sends as. The first is the default.
+	Addresses []string `json:"addresses,omitempty"`
 
 	// Paused says an operator stopped this mailbox sending, and Reason says why.
 	Paused bool   `json:"paused,omitempty"`

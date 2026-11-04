@@ -129,8 +129,12 @@ for {
 			Text:           "Got it, thanks.",
 			IdempotencyKey: "reply-" + ev.ID, // a retried send goes out once
 		})
-		if err == nil && sent.Error != nil {
+		switch {
+		case err != nil:
+		case sent.Error != nil:
 			log.Print(sent.Error) // refused: the guard or limit says why
+		case sent.State == bud.StateHeld:
+			log.Print("held for ", sent.ApprovalID) // a person decides; do not resend
 		}
 	}
 }

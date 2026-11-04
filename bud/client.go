@@ -233,9 +233,9 @@ func (c *Client) Health(ctx context.Context) (Health, error) {
 
 // Health is what a health probe returns.
 type Health struct {
-	Contract string `json:"contract"`
-	Agent    string `json:"agent"`
-	Tenant   string `json:"tenant"`
+	Contract  string `json:"contract"`
+	Agent     string `json:"agent"`
+	Workspace string `json:"workspace"`
 
 	// Error is a refusal: a key that reaches no agent here is forbidden_scope, an
 	// account that cannot be charged is not_billable. Either way the key itself
@@ -396,8 +396,13 @@ func (c *Client) UpdateMessage(ctx context.Context, in Change) (PutOutput, error
 
 // Send composes and sends a message.
 //
-// The server either queues the message or refuses it, naming the guard; nothing
-// waits for approval.
+// Three outcomes are normal and distinguishable. The message is StateQueued. Or
+// it is StateHeld, because a rule of the workspace's policy needs a person to
+// approve it first: ApprovalID names the approval, the message goes out when a
+// person approves it and never otherwise, and its sending budget is spent until
+// it is rejected or lapses. Do not send a held message again; nothing a caller
+// sends releases it, and a second send is a second message. Or it is refused as
+// CodePolicyRefused with Guard naming the rule that fired.
 //
 // Pass an IdempotencyKey on every send: without one, a timeout retried is a second
 // message, and this package will not retry a send without one, because it cannot

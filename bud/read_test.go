@@ -51,8 +51,13 @@ func TestRetryableFollowsTheServersAdvice(t *testing.T) {
 
 	for code, want := range map[string]bool{
 		bud.CodeUpstreamUnavailable: true, // the request had no effect
+		bud.CodePolicyUnavailable:   true, // nothing was done; the policy was not applied
 		bud.CodePreconditionFailed:  true, // read again and retry
 		bud.CodeInternal:            true,
+
+		bud.CodeSpendCapReached:           false, // a person raises the cap
+		bud.CodeImpersonationNotSupported: false, // needs a token for the agent itself
+		bud.CodeApprovalRequired:          false, // a person approves, not a clock
 
 		bud.CodePaused:            false, // an operator's decision; clears only when released
 		bud.CodeNotBillable:       false, // waits on billing, not on time
@@ -78,6 +83,113 @@ func TestRetryableFollowsTheServersAdvice(t *testing.T) {
 	if (*bud.Error)(nil).Retryable() {
 		t.Error("a nil refusal is retryable")
 	}
+	// A quota refills with its period, so even a stated wait is the caller's call
+	// rather than a retry loop's: unlike rate_limited, a wait does not make it
+	// retryable.
+	if (&bud.Error{Code: bud.CodeQuotaExceeded, RetryAfterMs: 1000}).Retryable() {
+		t.Error("a used-up quota is retryable; it refills with its period, not after a backoff")
+	}
+}
+
+// TestTheCodesAreSpelledAsTheServerSpellsThem pins each refusal code to the
+// string on the wire. Every other test compares a constant with itself, so a
+// constant misspelled here would pass them all while matching nothing the
+// server ever sends.
+func TestTheCodesAreSpelledAsTheServerSpellsThem(t *testing.T) {
+	t.Parallel()
+
+	for wire, code := range map[string]string{
+		"unauthorized":                bud.CodeUnauthorized,
+		"not_billable":                bud.CodeNotBillable,
+		"spend_cap_reached":           bud.CodeSpendCapReached,
+		"forbidden_scope":             bud.CodeForbiddenScope,
+		"impersonation_not_supported": bud.CodeImpersonationNotSupported,
+		"approval_required":           bud.CodeApprovalRequired,
+		"not_found":                   bud.CodeNotFound,
+		"precondition_failed":         bud.CodePreconditionFailed,
+		"policy_refused":              bud.CodePolicyRefused,
+		"rate_limited":                bud.CodeRateLimited,
+		"quota_exceeded":              bud.CodeQuotaExceeded,
+		"paused":                      bud.CodePaused,
+		"invalid":                     bud.CodeInvalid,
+		"unavailable":                 bud.CodeUnavailable,
+		"internal":                    bud.CodeInternal,
+		"upstream_unavailable":        bud.CodeUpstreamUnavailable,
+		"policy_unavailable":          bud.CodePolicyUnavailable,
+		"malformed_response":          bud.CodeMalformedResponse,
+	} {
+		if code != wire {
+			t.Errorf("the constant for %q is %q", wire, code)
+		}
+	}
+	for _, sentinel := range []*bud.Error{
+		bud.ErrUnauthorized, bud.ErrNotBillable, bud.ErrForbiddenScope, bud.ErrNotFound,
+		bud.ErrPreconditionFailed, bud.ErrPolicyRefused, bud.ErrRateLimited, bud.ErrPaused,
+		bud.ErrInvalid, bud.ErrUnavailable, bud.ErrInternal, bud.ErrUpstreamUnavailable,
+		bud.ErrMalformedResponse, bud.ErrSpendCapReached, bud.ErrImpersonationNotSupported,
+		bud.ErrApprovalRequired, bud.ErrQuotaExceeded, bud.ErrPolicyUnavailable,
+	} {
+		if sentinel.Code == "" {
+			t.Errorf("a sentinel carries no code, so errors.Is matches it against nothing: %#v", sentinel)
+		}
+	}
+}
+
+// TestAHeldSendNamesItsApproval covers the outcome that most invites a mistake:
+// a send a person has to approve comes back held, not refused, and carries the
+// approval it waits on. Reading it as a failure and sending again would make a
+// second message.
+func TestAHeldSendNamesItsApproval(t *testing.T) {
+	t.Parallel()
+
+	srv := readServer(t, map[string]string{
+		"/v1/send": `{"message":"message_01x","thread":"thread_01x","state":"held","approval_id":"appr_01x"}`,
+	})
+	out, err := mustClient(t, srv.URL).Send(t.Context(), bud.SendInput{
+		To: []string{"ada@example.com"}, Text: "hi", IdempotencyKey: "k1",
+	})
+	if err != nil || out.Error != nil {
+		t.Fatalf("Send: %v %v", err, out.Error)
+	}
+	if out.State != bud.StateHeld || out.ApprovalID != "appr_01x" {
+		t.Errorf("SendOutput = %+v, want held with its approval", out)
+	}
+}
+
+// TestTheWorkspaceIsWhereTheServerSaysItIs pins the fields renamed from tenant:
+// a client still reading the old names would see an empty workspace and every
+// sender as outside it, without any error.
+func TestTheWorkspaceIsWhereTheServerSaysItIs(t *testing.T) {
+	t.Parallel()
+
+	srv := readServer(t, map[string]string{
+		"/v1/health":      `{"contract":"bud/v1","agent":"ag_01x","workspace":"workspace_01x"}`,
+		"/v1/me.describe": `{"ref":"me","kind":"me","content":{"agent":"ag_01x","workspace":"workspace_01x"}}`,
+		"/v1/folder.list": `{"ref":"ag_01x/inbox","kind":"folder","content":{"mailbox":"ag_01x","folder":"inbox",` +
+			`"messages":[{"message":"message_01x","date":"2026-01-02T03:04:05Z","aligned":true,"in_workspace":true,"known":true}]}}`,
+	})
+	c := mustClient(t, srv.URL)
+
+	h, err := c.Health(t.Context())
+	if err != nil || h.Workspace != "workspace_01x" || !strings.HasPrefix(h.Workspace, bud.PrefixWorkspace) {
+		t.Errorf("Health = %+v, %v", h, err)
+	}
+	me, err := c.DescribeMe(t.Context())
+	if err != nil {
+		t.Fatalf("DescribeMe: %v", err)
+	}
+	var m bud.Me
+	if err := me.Into(&m); err != nil || m.Workspace != "workspace_01x" {
+		t.Errorf("Me = %+v, %v", m, err)
+	}
+	list, err := c.ListFolder(t.Context(), bud.In{In: "ag_01x"})
+	if err != nil {
+		t.Fatalf("ListFolder: %v", err)
+	}
+	var l bud.Listing
+	if err := list.Into(&l); err != nil || len(l.Messages) != 1 || !l.Messages[0].InWorkspace {
+		t.Errorf("Listing = %+v, %v", l, err)
+	}
 }
 
 // TestTheNewCodesMatchTheirSentinels lets a caller branch on errors.Is for the two
@@ -96,6 +208,17 @@ func TestTheNewCodesMatchTheirSentinels(t *testing.T) {
 	}
 	if !errors.Is(&bud.Error{Code: bud.CodeUpstreamUnavailable}, bud.ErrUpstreamUnavailable) {
 		t.Error("ErrUpstreamUnavailable does not match its own code")
+	}
+	for code, sentinel := range map[string]*bud.Error{
+		bud.CodeSpendCapReached:           bud.ErrSpendCapReached,
+		bud.CodeImpersonationNotSupported: bud.ErrImpersonationNotSupported,
+		bud.CodeApprovalRequired:          bud.ErrApprovalRequired,
+		bud.CodeQuotaExceeded:             bud.ErrQuotaExceeded,
+		bud.CodePolicyUnavailable:         bud.ErrPolicyUnavailable,
+	} {
+		if !errors.Is(&bud.Error{Code: code}, sentinel) || sentinel.Code != code {
+			t.Errorf("%s does not match its sentinel", code)
+		}
 	}
 }
 
@@ -124,7 +247,7 @@ func TestTheTypedViewsReadWhatTheServerSends(t *testing.T) {
 
 	srv := readServer(t, map[string]string{
 		"/v1/mailbox.describe": `{"ref":"ag_01x","kind":"mailbox","content":{"mailbox":"ag_01x",` +
-			`"folders":{"inbox":3},"sending":{"status":"provisioning","reason":"domain verifying"}}}`,
+			`"addresses":["ada@agents.example.com"],"folders":{"inbox":3},"sending":{"status":"provisioning","reason":"domain verifying"}}}`,
 		"/v1/correspondent.list": `{"ref":"ag_01x/corr","kind":"corr","content":{"mailbox":"ag_01x",` +
 			`"correspondents":[{"addr":"ada@example.com","first_seen":"2026-01-02T03:04:05Z",` +
 			`"last_seen":"2026-01-03T03:04:05Z","inbound":2,"last_aligned":true}]}}`,
@@ -141,7 +264,7 @@ func TestTheTypedViewsReadWhatTheServerSends(t *testing.T) {
 	if err := mailbox.Into(&mv); err != nil {
 		t.Fatalf("Into MailboxView: %v", err)
 	}
-	if mv.Folders["inbox"] != 3 || mv.Sending == nil || mv.Sending.Status != bud.SendingProvisioning {
+	if mv.Folders["inbox"] != 3 || len(mv.Addresses) != 1 || mv.Sending == nil || mv.Sending.Status != bud.SendingProvisioning {
 		t.Errorf("MailboxView = %+v", mv)
 	}
 

@@ -37,8 +37,13 @@ func TestHealthNamesTheAgent(t *testing.T) {
 	if h.Contract != bud.ContractVersion {
 		t.Errorf("contract %q, this client implements %q", h.Contract, bud.ContractVersion)
 	}
-	if h.Agent != me.Agent || h.Tenant != me.Tenant {
-		t.Errorf("health names %s in %s, me.describe %s in %s", h.Agent, h.Tenant, me.Agent, me.Tenant)
+	// Both empty would also be equal, which is what a client reading a field
+	// the server renamed sees, so the workspace has to be there at all.
+	if !strings.HasPrefix(h.Workspace, bud.PrefixWorkspace) {
+		t.Errorf("health names workspace %q, want a %s identifier", h.Workspace, bud.PrefixWorkspace)
+	}
+	if h.Agent != me.Agent || h.Workspace != me.Workspace {
+		t.Errorf("health names %s in %s, me.describe %s in %s", h.Agent, h.Workspace, me.Agent, me.Workspace)
 	}
 }
 

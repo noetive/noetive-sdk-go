@@ -33,12 +33,28 @@ const (
 	// set up.
 	CodeNotBillable = "not_billable"
 
+	// CodeSpendCapReached means a spend cap on the organization, workspace or
+	// agent has been reached. The server answers 402, like CodeNotBillable, but
+	// the payment method is not the problem: a person raises the cap, or its
+	// period ends.
+	CodeSpendCapReached = "spend_cap_reached"
+
 	// CodeForbiddenScope means the key is good and does not reach what was
-	// asked: its agent is disabled or not on this service, or it may not watch
-	// the mailbox or send as the sender it named. Never returned for an object
+	// asked: its agent is disabled, its account is not active, or it may not
+	// watch the mailbox, send, or send as the sender it named. Never returned for an object
 	// the caller cannot read — that is CodeNotFound, because saying "forbidden"
 	// about an identifier confirms it exists.
 	CodeForbiddenScope = "forbidden_scope"
+
+	// CodeImpersonationNotSupported means the access token acts for a person
+	// rather than for the agent, and no operation accepts that yet. The server
+	// answers 403. A token minted for the agent itself is what works.
+	CodeImpersonationNotSupported = "impersonation_not_supported"
+
+	// CodeApprovalRequired means a person has to approve this action before it
+	// can happen, and the operation cannot wait for one. The server answers 403.
+	// A Send is never refused with this: it comes back StateHeld instead.
+	CodeApprovalRequired = "approval_required"
 
 	// CodeNotFound means the object does not exist, exists outside every grant
 	// the caller holds, or the operation does not exist.
@@ -58,6 +74,12 @@ const (
 	// with more recipients than the limit allows, say — and the request has to
 	// change.
 	CodeRateLimited = "rate_limited"
+
+	// CodeQuotaExceeded means a usage quota for the period is used up. The
+	// server answers 429, like CodeRateLimited, but waiting seconds does not
+	// help: Counter names the quota and RetryAfter says when its window refills,
+	// which can be the rest of the period.
+	CodeQuotaExceeded = "quota_exceeded"
 
 	// CodePaused means the mailbox is paused and is not sending. Unlike
 	// CodeRateLimited it does not clear on its own. The server answers 409, which
@@ -82,6 +104,11 @@ const (
 	// and the request had no effect. The server answers 503; retry with backoff.
 	CodeUpstreamUnavailable = "upstream_unavailable"
 
+	// CodePolicyUnavailable means the policy that governs this caller could not
+	// be applied, so nothing was done. The server answers 503; retry with
+	// backoff.
+	CodePolicyUnavailable = "policy_unavailable"
+
 	// CodeMalformedResponse is this package's own: the server answered with
 	// something that is not the envelope. Distinct from CodeInternal so a caller
 	// can tell "the server failed" from "we could not read what it said".
@@ -103,6 +130,12 @@ var (
 	ErrInternal            = &Error{Code: CodeInternal}
 	ErrUpstreamUnavailable = &Error{Code: CodeUpstreamUnavailable}
 	ErrMalformedResponse   = &Error{Code: CodeMalformedResponse}
+
+	ErrSpendCapReached           = &Error{Code: CodeSpendCapReached}
+	ErrImpersonationNotSupported = &Error{Code: CodeImpersonationNotSupported}
+	ErrApprovalRequired          = &Error{Code: CodeApprovalRequired}
+	ErrQuotaExceeded             = &Error{Code: CodeQuotaExceeded}
+	ErrPolicyUnavailable         = &Error{Code: CodePolicyUnavailable}
 )
 
 // Error is a refusal, with everything the server said about what to do next.
@@ -215,8 +248,8 @@ func (e *Error) RetryAfter() time.Duration {
 // writing the same switch.
 //
 // True for:
-//   - CodeUpstreamUnavailable, which the server promises had no effect, so
-//     repeating it cannot duplicate anything;
+//   - CodeUpstreamUnavailable and CodePolicyUnavailable, which the server
+//     promises had no effect, so repeating them cannot duplicate anything;
 //   - CodeRateLimited, when it says how long to wait — without RetryAfter the
 //     request itself has to change;
 //   - CodePreconditionFailed, after reading the object again: other writes
@@ -229,13 +262,18 @@ func (e *Error) RetryAfter() time.Duration {
 // looks, because it means this deployment does not serve that option of the
 // operation. CodePaused clears only when an operator releases the mailbox, so a
 // caller that slept and retried could wait for ever. CodeNotBillable waits on a
-// person setting up billing. CodePolicyRefused is not worth repeating unchanged.
+// person setting up billing, and CodeSpendCapReached on a person raising the
+// cap. CodeQuotaExceeded refills only when its window does, which can be the rest
+// of the period: RetryAfter says when, and whether to wait that long is the
+// caller's decision rather than a retry loop's. CodeApprovalRequired and
+// CodeImpersonationNotSupported need a person or a different token.
+// CodePolicyRefused is not worth repeating unchanged.
 func (e *Error) Retryable() bool {
 	if e == nil {
 		return false
 	}
 	switch e.Code {
-	case CodeUpstreamUnavailable, CodePreconditionFailed, CodeInternal:
+	case CodeUpstreamUnavailable, CodePolicyUnavailable, CodePreconditionFailed, CodeInternal:
 		return true
 	case CodeRateLimited:
 		return e.RetryAfterMs > 0
