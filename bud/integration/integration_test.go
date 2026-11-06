@@ -56,7 +56,7 @@ func TestTheCatalogServesEveryOperationThisClientCalls(t *testing.T) {
 	for _, op := range []string{
 		"me.describe", "health", "catalog.describe", "folder.list", "message.describe",
 		"thread.describe", "part.describe", "mailbox.describe", "correspondent.list",
-		"message.update", "send", "watch",
+		"addressbook.describe", "message.update", "send", "watch",
 	} {
 		if !cat.Served(op) {
 			t.Errorf("the catalog does not serve %q", op)
@@ -313,4 +313,39 @@ func firstText(parts []bud.PartInfo) string {
 		}
 	}
 	return ""
+}
+
+// TestTheAddressbookListsThisAgent reads the workspace addressbook and checks
+// this agent is in it, marked as itself, under its own addresses. A key without
+// the book scope must be refused as forbidden_scope rather than handed an empty
+// book, which would read as a workspace with nobody in it.
+func TestTheAddressbookListsThisAgent(t *testing.T) {
+	c, me := setup(t)
+	out, err := c.DescribeAddressbook(callContext(t), bud.AddressbookQuery{Limit: 200})
+	if err == nil && out.Error != nil && out.Error.Code == bud.CodeForbiddenScope {
+		t.Skipf("this key does not hold the book scope, and was refused as it should be: %v", out.Error)
+	}
+	answered(t, "DescribeAddressbook", err, out.Error)
+	var book bud.Addressbook
+	if err := out.Into(&book); err != nil {
+		t.Fatalf("Into(Addressbook): %v", err)
+	}
+	if !strings.HasPrefix(book.Workspace, bud.PrefixWorkspace) {
+		t.Errorf("workspace %q, want a workspace identifier", book.Workspace)
+	}
+	var self *bud.AddressbookEntry
+	for i, e := range book.Entries {
+		if !strings.HasPrefix(e.Agent, bud.PrefixAgent) || len(e.Addresses)+len(e.ReceiveOnly) == 0 {
+			t.Errorf("entry %+v has no agent identifier or no address", e)
+		}
+		if e.Self {
+			if e.Agent != me.Mailbox {
+				t.Errorf("entry %s is marked self; this agent is %s", e.Agent, me.Mailbox)
+			}
+			self = &book.Entries[i]
+		}
+	}
+	if self == nil && out.Cursor == "" {
+		t.Fatalf("this agent is not in its own workspace's addressbook: %+v", book)
+	}
 }
