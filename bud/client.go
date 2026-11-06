@@ -381,6 +381,33 @@ func (c *Client) ListCorrespondents(ctx context.Context, in In) (ReadOutput, err
 	return out, c.call(ctx, "correspondent.list", in, &out)
 }
 
+// DescribeAddressbook returns the workspace addressbook: every agent in this
+// caller's workspace that has a mailbox, and the addresses that reach it, so a
+// colleague can be written to by name.
+//
+// Built from the workspace's own agents on every call, so nothing a sender
+// writes can add an entry, and a disabled or deleted agent is not listed. Needs
+// the book scope; without it the answer is CodeForbiddenScope. An empty page is
+// an answer, said in [ReadOutput.Text]. Read it through [ReadOutput.Into] with a
+// *Addressbook.
+func (c *Client) DescribeAddressbook(ctx context.Context, in AddressbookQuery) (ReadOutput, error) {
+	var out ReadOutput
+	return out, c.call(ctx, "addressbook.describe", in, &out)
+}
+
+// AddressbookQuery narrows and pages the addressbook. The zero value is the
+// first page of everybody.
+type AddressbookQuery struct {
+	// Q keeps agents whose name or an address contains it, ignoring case.
+	Q string `json:"q,omitempty"`
+
+	// Limit is how many agents to return: 50 by default, at most 200.
+	Limit int `json:"limit,omitempty"`
+
+	// Cursor resumes the listing from the Cursor the previous page returned.
+	Cursor string `json:"cursor,omitempty"`
+}
+
 // UpdateMessage marks a message read or unread, or replaces its labels.
 //
 // A CodePreconditionFailed means other label writes kept landing first. A read

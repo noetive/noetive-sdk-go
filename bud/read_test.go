@@ -251,6 +251,9 @@ func TestTheTypedViewsReadWhatTheServerSends(t *testing.T) {
 		"/v1/correspondent.list": `{"ref":"ag_01x/corr","kind":"corr","content":{"mailbox":"ag_01x",` +
 			`"correspondents":[{"addr":"ada@example.com","first_seen":"2026-01-02T03:04:05Z",` +
 			`"last_seen":"2026-01-03T03:04:05Z","inbound":2,"last_aligned":true}]}}`,
+		"/v1/addressbook.describe": `{"ref":"addressbook","kind":"addressbook","content":{"workspace":"workspace_01x",` +
+			`"entries":[{"agent":"ag_01x","name":"Ada","kind":"assistant","addresses":["ada@agents.example.com"],` +
+			`"receive_only":["help@agents.example.com"],"self":true}]},"truncated":true,"cursor":"ag_01x"}`,
 		"/v1/part.describe": `{"ref":"message_01x/part/2","kind":"part","content":{"message":"message_01x",` +
 			`"part":"2","mode":"bytes","type":"text/plain","bytes_base64":"aGVsbG8="}}`,
 	})
@@ -281,6 +284,22 @@ func TestTheTypedViewsReadWhatTheServerSends(t *testing.T) {
 		t.Errorf("Correspondents = %+v", cv)
 	}
 
+	book, err := c.DescribeAddressbook(t.Context(), bud.AddressbookQuery{Q: "ada"})
+	if err != nil {
+		t.Fatalf("DescribeAddressbook: %v", err)
+	}
+	var bv bud.Addressbook
+	if err := book.Into(&bv); err != nil {
+		t.Fatalf("Into Addressbook: %v", err)
+	}
+	if bv.Workspace != "workspace_01x" || len(bv.Entries) != 1 || !bv.Entries[0].Self ||
+		bv.Entries[0].Addresses[0] != "ada@agents.example.com" || bv.Entries[0].ReceiveOnly[0] != "help@agents.example.com" {
+		t.Errorf("Addressbook = %+v", bv)
+	}
+	if book.Cursor != "ag_01x" || !book.Truncated {
+		t.Errorf("the next page is lost: cursor %q, truncated %v", book.Cursor, book.Truncated)
+	}
+
 	part, err := c.DescribePart(t.Context(), bud.ByID{ID: "message_01x", Part: "2", Mode: bud.PartModeBytes})
 	if err != nil {
 		t.Fatalf("DescribePart: %v", err)
@@ -298,6 +317,9 @@ func TestTheTypedViewsReadWhatTheServerSends(t *testing.T) {
 	if err := part.Into(&mv); !errors.Is(err, bud.ErrInvalid) {
 		t.Errorf("a part decoded into a MailboxView: %v", err)
 	}
+	if err := part.Into(&bv); !errors.Is(err, bud.ErrInvalid) {
+		t.Errorf("a part decoded into an Addressbook: %v", err)
+	}
 }
 
 // TestTheRequestsCarryTheFieldsThatSelectThem pins the wire names the server
@@ -305,7 +327,7 @@ func TestTheTypedViewsReadWhatTheServerSends(t *testing.T) {
 func TestTheRequestsCarryTheFieldsThatSelectThem(t *testing.T) {
 	t.Parallel()
 
-	got := make(chan map[string]any, 3)
+	got := make(chan map[string]any, 4)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body := map[string]any{}
 		_ = json.NewDecoder(r.Body).Decode(&body)
@@ -325,11 +347,15 @@ func TestTheRequestsCarryTheFieldsThatSelectThem(t *testing.T) {
 	if _, err := c.ListCorrespondents(t.Context(), bud.In{In: "ag_01x", Limit: 10}); err != nil {
 		t.Fatalf("ListCorrespondents: %v", err)
 	}
+	if _, err := c.DescribeAddressbook(t.Context(), bud.AddressbookQuery{Q: "ada", Cursor: "ag_01x"}); err != nil {
+		t.Fatalf("DescribeAddressbook: %v", err)
+	}
 
 	for _, want := range []map[string]any{
 		{"_path": "/v1/part.describe", "id": "message_01x", "part": "2", "mode": "text"},
 		{"_path": "/v1/thread.describe", "id": "thread_01x", "max_messages": float64(5)},
 		{"_path": "/v1/correspondent.list", "in": "ag_01x", "limit": float64(10)},
+		{"_path": "/v1/addressbook.describe", "q": "ada", "cursor": "ag_01x", "in": nil},
 	} {
 		body := <-got
 		for k, v := range want {

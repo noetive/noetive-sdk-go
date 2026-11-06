@@ -133,14 +133,15 @@ const (
 
 // The object kinds a read can return, which is also what Kind names.
 const (
-	KindMe      = "me"
-	KindHelp    = "help"
-	KindMailbox = "mailbox"
-	KindFolder  = "folder"
-	KindCorr    = "corr"
-	KindMessage = "message"
-	KindPart    = "part"
-	KindThread  = "thread"
+	KindMe          = "me"
+	KindHelp        = "help"
+	KindMailbox     = "mailbox"
+	KindFolder      = "folder"
+	KindCorr        = "corr"
+	KindAddressbook = "addressbook"
+	KindMessage     = "message"
+	KindPart        = "part"
+	KindThread      = "thread"
 )
 
 // The identifier prefixes.

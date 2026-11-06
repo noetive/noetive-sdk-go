@@ -256,6 +256,15 @@ func TestAnUnkeyedWriteIsNeverRetried(t *testing.T) {
 	if n := attempts.Load(); n < 2 {
 		t.Errorf("a read was attempted %d times; reads are safe to repeat", n)
 	}
+
+	// The addressbook is a read too, though its name is not a list.
+	attempts.Store(0)
+	if _, err := c.DescribeAddressbook(t.Context(), bud.AddressbookQuery{}); err == nil {
+		t.Fatal("a failed connection was reported as success")
+	}
+	if n := attempts.Load(); n < 2 {
+		t.Errorf("the addressbook was attempted %d times; reads are safe to repeat", n)
+	}
 }
 
 // TestAForwardingClientHoldsNoCredential covers the relay case.

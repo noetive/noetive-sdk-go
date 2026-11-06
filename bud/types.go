@@ -440,6 +440,33 @@ type CorrespondentView struct {
 	LastAligned bool   `json:"last_aligned,omitempty"`
 }
 
+// Addressbook is every agent in the caller's workspace that has a mailbox.
+// Content for KindAddressbook.
+//
+// Derived from the agents the workspace's owner set up, never curated, so
+// nothing a sender writes can add a name to it.
+type Addressbook struct {
+	Workspace string             `json:"workspace"`
+	Entries   []AddressbookEntry `json:"entries"`
+}
+
+// AddressbookEntry is one agent in the workspace.
+type AddressbookEntry struct {
+	Agent string `json:"agent"`
+	Name  string `json:"name,omitempty"`
+	Kind  string `json:"kind,omitempty"`
+
+	// Addresses send and receive; the first is the one the agent sends from.
+	Addresses []string `json:"addresses"`
+
+	// ReceiveOnly addresses deliver to the agent and are never sent from, so
+	// mail claiming to come from one is not from this agent.
+	ReceiveOnly []string `json:"receive_only,omitempty"`
+
+	// Self marks the caller's own entry.
+	Self bool `json:"self,omitempty"`
+}
+
 // PartView is one part of a message — an attachment or a body alternative — in
 // the mode that was asked for. Content for KindPart.
 type PartView struct {
@@ -491,7 +518,7 @@ type PartInfo struct {
 // such as help, whose Text is the whole of it.
 //
 // The kind is checked for this package's views — *Me, *MailboxView, *Listing,
-// *Correspondents, *Conversation, *PartView, and *PartMap for a message read
+// *Correspondents, *Addressbook, *Conversation, *PartView, and *PartMap for a message read
 // with RenderParts. Any other type, a caller's own struct for a message's
 // state included, is decoded as asked.
 func (o ReadOutput) Into(v any) error {
@@ -519,6 +546,8 @@ func viewKind(v any) string {
 		return KindFolder
 	case *Correspondents:
 		return KindCorr
+	case *Addressbook:
+		return KindAddressbook
 	case *Conversation:
 		return KindThread
 	case *PartView:

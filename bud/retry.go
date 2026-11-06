@@ -106,7 +106,7 @@ func writes(op string) bool {
 	switch op {
 	case "me.describe", "health", "catalog.describe",
 		"folder.list", "message.describe", "thread.describe", "part.describe",
-		"mailbox.describe", "correspondent.list", "help.describe", "watch":
+		"mailbox.describe", "correspondent.list", "addressbook.describe", "help.describe", "watch":
 		return false
 	default:
 		return true
