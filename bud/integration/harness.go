@@ -23,6 +23,7 @@ package integration
 
 import (
 	"context"
+	"net/http"
 	"os"
 	"strings"
 	"testing"
@@ -55,7 +56,7 @@ func key(t *testing.T) string {
 // refusal in the middle of every test that follows.
 func setup(t *testing.T) (*bud.Client, bud.Me) {
 	t.Helper()
-	c, err := bud.New(key(t), bud.WithBaseURL(ProdBaseURL))
+	c, err := bud.New(key(t), bud.WithBaseURL(ProdBaseURL), bud.WithHTTPClient(paced{next: http.DefaultClient}))
 	if err != nil {
 		t.Fatalf("bud.New: %v", err)
 	}
