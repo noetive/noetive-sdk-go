@@ -166,7 +166,9 @@ type In struct {
 	// In is the mailbox, by its agent's identifier.
 	In string `json:"in"`
 
-	// Folder is FolderInbox, the default, FolderSent or FolderQuarantine.
+	// Folder is FolderInbox, the default, FolderSent, FolderQuarantine or a
+	// folder the mailbox made. One it does not have is refused as not_found
+	// rather than listed empty.
 	Folder string `json:"folder,omitempty"`
 
 	// Unread and Agent narrow to unread messages and to messages carrying a
@@ -204,8 +206,9 @@ type In struct {
 type Change struct {
 	ID string `json:"id"`
 
-	// Changes is {"read": bool, "labels": [string]}, at least one. Labels
-	// replace the message's labels whole, so an empty list removes them all.
+	// Changes is {"read": bool, "labels": [string], "folder": string}, at least
+	// one. Labels replace the message's labels whole, so an empty list removes
+	// them all. Folder moves the message; see [Client.MoveMessage].
 	Changes json.RawMessage `json:"changes"`
 
 	// IdempotencyKey is remembered on a best-effort basis for up to an hour.
@@ -408,17 +411,92 @@ type AddressbookQuery struct {
 	Cursor string `json:"cursor,omitempty"`
 }
 
-// UpdateMessage marks a message read or unread, or replaces its labels.
+// UpdateMessage marks a message read or unread, replaces its labels, or moves it
+// to another folder.
 //
-// A CodePreconditionFailed means other label writes kept landing first. A read
-// change in the same request may already have applied; the request is safe to
-// repeat as it was.
+// A CodePreconditionFailed means other writes kept landing first, or the
+// message is still being delivered; the hint says which. A change earlier in the
+// same request may already have applied; the request is safe to repeat as it was.
 func (c *Client) UpdateMessage(ctx context.Context, in Change) (PutOutput, error) {
 	var out PutOutput
 	if err := requireChange(in, PrefixMessage, "UpdateMessage"); err != nil {
 		return out, err
 	}
 	return out, c.call(ctx, "message.update", in, &out)
+}
+
+// Move files a message in another folder of its mailbox.
+type Move struct {
+	ID string `json:"id"`
+
+	// Folder is FolderInbox, FolderQuarantine or a folder the mailbox made.
+	Folder string `json:"-"`
+
+	// IdempotencyKey is remembered on a best-effort basis for up to an hour.
+	IdempotencyKey string `json:"idempotency_key,omitempty"`
+}
+
+// MoveMessage files a received message in another folder of its mailbox. It is
+// [Client.UpdateMessage] with only a folder change.
+//
+// Received mail moves between FolderInbox, FolderQuarantine and the folders made
+// with [Client.CreateFolder]; sent mail stays in FolderSent and a move of it is
+// refused as invalid. A folder the mailbox does not have is not_found. Moving a
+// message where it already is reports no effect. Moving out of quarantine
+// changes where the message is filed, not how it was authenticated: replying to
+// it is still refused.
+//
+//	out, err := c.MoveMessage(ctx, bud.Move{ID: "message_01j...", Folder: "receipts"})
+func (c *Client) MoveMessage(ctx context.Context, in Move) (PutOutput, error) {
+	if in.Folder == "" {
+		return PutOutput{}, preflight(CodeInvalid, "MoveMessage needs a Folder")
+	}
+	changes, err := json.Marshal(map[string]string{"folder": in.Folder})
+	if err != nil {
+		return PutOutput{}, err
+	}
+	return c.UpdateMessage(ctx, Change{ID: in.ID, Changes: changes, IdempotencyKey: in.IdempotencyKey})
+}
+
+// Folder names one folder of one mailbox, for making or removing it.
+type Folder struct {
+	// In is the mailbox, by its agent's identifier.
+	In string `json:"in"`
+
+	// Folder is the folder's name: lowercase letters, digits and hyphens, at most
+	// 48 characters, and not one of the system folders.
+	Folder string `json:"folder"`
+
+	// IdempotencyKey is remembered on a best-effort basis for up to an hour.
+	IdempotencyKey string `json:"idempotency_key,omitempty"`
+}
+
+// CreateFolder makes a folder in a mailbox to file mail in. Making one that
+// already exists reports no effect, so the call is safe to repeat. A mailbox has
+// at most 32 folders of its own; past that the call is refused as
+// CodePreconditionFailed until one is removed. Only the mailbox's own agent can
+// make or remove its folders.
+//
+//	out, err := c.CreateFolder(ctx, bud.Folder{In: "ag_01j...", Folder: "receipts"})
+func (c *Client) CreateFolder(ctx context.Context, in Folder) (PutOutput, error) {
+	var out PutOutput
+	if err := requireFolder(in, "CreateFolder"); err != nil {
+		return out, err
+	}
+	return out, c.call(ctx, "folder.create", in, &out)
+}
+
+// DeleteFolder removes an empty folder the mailbox made. One that still holds
+// mail is refused as CodePreconditionFailed and nothing changes: move its mail
+// elsewhere first. Removing one that is already gone reports no effect.
+//
+//	out, err := c.DeleteFolder(ctx, bud.Folder{In: "ag_01j...", Folder: "receipts"})
+func (c *Client) DeleteFolder(ctx context.Context, in Folder) (PutOutput, error) {
+	var out PutOutput
+	if err := requireFolder(in, "DeleteFolder"); err != nil {
+		return out, err
+	}
+	return out, c.call(ctx, "folder.delete", in, &out)
 }
 
 // Send composes and sends a message.
@@ -460,6 +538,16 @@ func requireID(id, prefix, op string) error {
 	default:
 		return nil
 	}
+}
+
+func requireFolder(in Folder, op string) error {
+	if err := requireID(in.In, PrefixAgent, op); err != nil {
+		return err
+	}
+	if in.Folder == "" {
+		return preflight(CodeInvalid, "%s needs a Folder", op)
+	}
+	return nil
 }
 
 func requireChange(in Change, prefix, op string) error {

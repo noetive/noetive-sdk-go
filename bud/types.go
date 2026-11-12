@@ -115,7 +115,9 @@ type PutOutput struct {
 	Version string `json:"version,omitempty"`
 	Created bool   `json:"created,omitempty"`
 
-	// Effects names what the write changed: EffectMailRead, EffectLabelled.
+	// Effects names what the write changed: EffectMailRead, EffectLabelled,
+	// EffectMoved, EffectFolderCreated, EffectFolderDeleted. Empty when the
+	// write asked for what was already true.
 	Effects []Effect `json:"effects,omitempty"`
 
 	Error *Error `json:"error,omitempty"`

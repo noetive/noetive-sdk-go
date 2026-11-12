@@ -61,6 +61,11 @@ const (
 	// EventRead is a message marked read or unread.
 	EventRead = "mail.read"
 
+	// EventMoved is a message its agent filed in another folder. Its
+	// EventData.Folder is where it went; on EventReceived and EventQuarantined
+	// the folder is where it arrived.
+	EventMoved = "mail.moved"
+
 	// EventRenderFailed means a rendering was withheld as unsafe and a degraded
 	// one shown instead.
 	EventRenderFailed = "render.failed"
@@ -73,7 +78,11 @@ const (
 	ActorOperator = "operator"
 )
 
-// The folders, which In.Folder names. FolderInbox is the default.
+// The system folders, which always exist. In.Folder names one of these or a
+// folder the mailbox made with [Client.CreateFolder]: lowercase letters, digits
+// and hyphens, at most 48 characters. FolderInbox is the default. Received
+// mail moves between inbox, quarantine and the mailbox's own folders; sent mail
+// stays in FolderSent.
 const (
 	FolderInbox      = "inbox"
 	FolderSent       = "sent"
@@ -170,6 +179,14 @@ const (
 
 	// EffectLabelled is a message whose labels were set.
 	EffectLabelled = "labelled"
+
+	// EffectMoved is a message filed in another folder.
+	EffectMoved = "moved"
+
+	// EffectFolderCreated and EffectFolderDeleted are a folder made or
+	// removed. A call that changed nothing reports neither.
+	EffectFolderCreated = "folder.created"
+	EffectFolderDeleted = "folder.deleted"
 )
 
 // BannerPrefix begins the rendering of anything carrying content somebody else
